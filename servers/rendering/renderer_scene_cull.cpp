@@ -3318,7 +3318,15 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 				thread.clear();
 			}
 
-			WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(this, &RendererSceneCull::_scene_cull_threaded, &cull_data, scene_cull_result_threads.size(), -1, true, SNAME("RenderCullInstances"));
+			WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(
+				this,
+				&RendererSceneCull::_scene_cull_threaded,
+				&cull_data,
+				scene_cull_result_threads.size(),
+				-1,
+				true,
+				SNAME("RenderCullInstances")
+				);
 			WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 
 			for (InstanceCullResult &thread : scene_cull_result_threads) {

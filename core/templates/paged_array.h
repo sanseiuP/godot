@@ -138,18 +138,18 @@ template <typename T>
 class PagedArray {
 	PagedArrayPool<T> *page_pool = nullptr;
 
-	T **page_data = nullptr;
-	uint32_t *page_ids = nullptr;
-	uint32_t max_pages_used = 0;
-	uint32_t page_size_shift = 0;
-	uint32_t page_size_mask = 0;
-	uint64_t count = 0;
+	T **page_data = nullptr; //一串指向多个Page的指针，未必都有效
+	uint32_t *page_ids = nullptr; //一串Page的Id，未必都有效
+	uint32_t max_pages_used = 0; //上面两个数组的大小
+	uint32_t page_size_shift = 0; //一个Page的大小（2的幂数）
+	uint32_t page_size_mask = 0; //掩码，等于 2^page_size_shift - 1
+	uint64_t count = 0; //实际的元素数量
 
 	_FORCE_INLINE_ uint32_t _get_pages_in_use() const {
 		if (count == 0) {
 			return 0;
 		} else {
-			return ((count - 1) >> page_size_shift) + 1;
+			return ((count - 1) >> page_size_shift) + 1; //这个算式返回count个元素占用的Page数量
 		}
 	}
 
@@ -160,6 +160,7 @@ class PagedArray {
 		} else {
 			max_pages_used *= 2; // increase in powers of 2 to keep allocations to minimum
 		}
+		//这里只是分配了指针数组，并没有实际的Page内存产生
 		page_data = (T **)memrealloc(page_data, sizeof(T *) * max_pages_used);
 		page_ids = (uint32_t *)memrealloc(page_ids, sizeof(uint32_t) * max_pages_used);
 	}
@@ -167,8 +168,8 @@ class PagedArray {
 public:
 	_FORCE_INLINE_ const T &operator[](uint64_t p_index) const {
 		CRASH_BAD_UNSIGNED_INDEX(p_index, count);
-		uint32_t page = p_index >> page_size_shift;
-		uint32_t offset = p_index & page_size_mask;
+		uint32_t page = p_index >> page_size_shift; //在指针数组中的Page序号
+		uint32_t offset = p_index & page_size_mask; //在Page中的局部下标
 
 		return page_data[page][offset];
 	}
@@ -181,12 +182,13 @@ public:
 	}
 
 	_FORCE_INLINE_ void push_back(const T &p_value) {
-		uint32_t remainder = count & page_size_mask;
+		uint32_t remainder = count & page_size_mask; //如果元素只能一个个放入，那么一个页面填满后，这个算式会得到0
 		if (unlikely(remainder == 0)) {
 			// at 0, so time to request a new page
-			uint32_t page_count = _get_pages_in_use();
-			uint32_t new_page_count = page_count + 1;
+			uint32_t page_count = _get_pages_in_use(); //实际分配到的页面数量
+			uint32_t new_page_count = page_count + 1; //+1
 
+			//是否需要扩大索引数组
 			if (unlikely(new_page_count > max_pages_used)) {
 				ERR_FAIL_NULL(page_pool); // Safety check.
 
@@ -220,11 +222,11 @@ public:
 			page_data[page][offset].~T();
 		}
 
-		uint32_t remainder = count & page_size_mask;
+		uint32_t remainder = count & page_size_mask; //如果元素只能一个个取出，那么取出某个页面的最后一个元素前，这个算式会得到1
 		if (unlikely(remainder == 1)) {
 			// one element remained, so page must be freed.
 			uint32_t last_page = _get_pages_in_use() - 1;
-			page_pool->free_page(page_ids[last_page]);
+			page_pool->free_page(page_ids[last_page]); //归还这个页面
 		}
 		count--;
 	}
@@ -245,6 +247,7 @@ public:
 			}
 		}
 
+		//归还全部页面
 		//return the pages to the pagepool, so they can be used by another array eventually
 		uint32_t pages_used = _get_pages_in_use();
 		for (uint32_t i = 0; i < pages_used; i++) {

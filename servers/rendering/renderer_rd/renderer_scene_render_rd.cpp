@@ -1186,7 +1186,7 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 		render_data.render_buffers = rb;
 		render_data.scene_data = &scene_data;
 
-		render_data.instances = &p_instances;
+		render_data.instances = &p_instances; //所有要渲染的几何图元
 		render_data.lights = &p_lights;
 		render_data.reflection_probes = &p_reflection_probes;
 		render_data.voxel_gi_instances = &p_voxel_gi_instances;
