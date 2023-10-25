@@ -952,7 +952,13 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 				}
 
 				uint32_t indices = 0;
-				surf->sort.lod_index = mesh_storage->mesh_surface_get_lod(surf->surface, inst->lod_model_scale * inst->lod_bias, distance * p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, indices);
+				surf->sort.lod_index = mesh_storage->mesh_surface_get_lod(
+					surf->surface,
+					inst->lod_model_scale * inst->lod_bias,
+					distance * p_render_data->scene_data->lod_distance_multiplier,
+					p_render_data->scene_data->screen_mesh_lod_threshold,
+					indices
+					);
 				if (p_render_data->render_info) {
 					indices = _indices_to_primitives(surf->primitive, indices);
 					if (p_render_list == RENDER_LIST_OPAQUE) { //opaque
@@ -1891,6 +1897,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	_setup_environment(p_render_data, is_reflection_probe, screen_size, !is_reflection_probe, p_default_bg_color, true);
 
+	//不透明渲染
 	RENDER_TIMESTAMP("Render Opaque Pass");
 
 	RID rp_uniform_set = _setup_render_pass_uniform_set(RENDER_LIST_OPAQUE, p_render_data, radiance_texture, true);
@@ -1916,8 +1923,31 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 		}
 
-		RenderListParameters render_list_params(render_list[RENDER_LIST_OPAQUE].elements.ptr(), render_list[RENDER_LIST_OPAQUE].element_info.ptr(), render_list[RENDER_LIST_OPAQUE].elements.size(), reverse_cull, PASS_MODE_COLOR, color_pass_flags, rb_data.is_null(), p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RS::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, p_render_data->scene_data->view_count);
-		_render_list_with_threads(&render_list_params, color_framebuffer, keep_color ? RD::INITIAL_ACTION_KEEP : RD::INITIAL_ACTION_CLEAR, will_continue_color ? RD::FINAL_ACTION_CONTINUE : RD::FINAL_ACTION_READ, depth_pre_pass ? (continue_depth ? RD::INITIAL_ACTION_CONTINUE : RD::INITIAL_ACTION_KEEP) : RD::INITIAL_ACTION_CLEAR, will_continue_depth ? RD::FINAL_ACTION_CONTINUE : RD::FINAL_ACTION_READ, c, 1.0, 0);
+		RenderListParameters render_list_params(
+			render_list[RENDER_LIST_OPAQUE].elements.ptr(),
+			render_list[RENDER_LIST_OPAQUE].element_info.ptr(),
+			render_list[RENDER_LIST_OPAQUE].elements.size(),
+			reverse_cull,
+			PASS_MODE_COLOR, //渲染模式：颜色
+			color_pass_flags, //渲染Flag
+			rb_data.is_null(),
+			p_render_data->directional_light_soft_shadows,
+			rp_uniform_set,
+			get_debug_draw_mode() == RS::VIEWPORT_DEBUG_DRAW_WIREFRAME,
+			Vector2(),
+			p_render_data->scene_data->lod_distance_multiplier,
+			p_render_data->scene_data->screen_mesh_lod_threshold,
+			p_render_data->scene_data->view_count);
+		_render_list_with_threads(
+			&render_list_params,
+			color_framebuffer,
+			keep_color ? RD::INITIAL_ACTION_KEEP : RD::INITIAL_ACTION_CLEAR,
+			will_continue_color ? RD::FINAL_ACTION_CONTINUE : RD::FINAL_ACTION_READ,
+			depth_pre_pass ? (continue_depth ? RD::INITIAL_ACTION_CONTINUE : RD::INITIAL_ACTION_KEEP) : RD::INITIAL_ACTION_CLEAR,
+			will_continue_depth ? RD::FINAL_ACTION_CONTINUE : RD::FINAL_ACTION_READ,
+			c,
+			1.0,
+			0);
 		if (will_continue_color && using_separate_specular) {
 			// close the specular framebuffer, as it's no longer used
 			RD::get_singleton()->draw_list_begin(rb_data->get_specular_only_fb(), RD::INITIAL_ACTION_CONTINUE, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_CONTINUE, RD::FINAL_ACTION_CONTINUE);
@@ -3425,6 +3455,7 @@ void RenderForwardClustered::GeometryInstanceForwardClustered::_mark_dirty() {
 
 	surface_caches = nullptr;
 
+	//将dirty_list_element记录在RenderForwardClustered的dirty_list中
 	RenderForwardClustered::get_singleton()->geometry_instance_dirty_list.add(&dirty_list_element);
 }
 
@@ -3533,11 +3564,14 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->sort.uses_softshadow = ginstance->using_softshadows;
 }
 
-void RenderForwardClustered::_geometry_instance_add_surface_with_material_chain(GeometryInstanceForwardClustered *ginstance, uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, RID p_mat_src, RID p_mesh) {
+void RenderForwardClustered::_geometry_instance_add_surface_with_material_chain(GeometryInstanceForwardClustered *ginstance,
+	uint32_t p_surface, SceneShaderForwardClustered::MaterialData *p_material, RID p_mat_src, RID p_mesh)
+{
 	SceneShaderForwardClustered::MaterialData *material = p_material;
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 
-	_geometry_instance_add_surface_with_material(ginstance, p_surface, material, p_mat_src.get_local_index(), material_storage->material_get_shader_id(p_mat_src), p_mesh);
+	_geometry_instance_add_surface_with_material(ginstance,
+		p_surface, material, p_mat_src.get_local_index(), material_storage->material_get_shader_id(p_mat_src), p_mesh);
 
 	while (material->next_pass.is_valid()) {
 		RID next_pass = material->next_pass;
@@ -3548,7 +3582,8 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material_chain(
 		if (ginstance->data->dirty_dependencies) {
 			material_storage->material_update_dependency(next_pass, &ginstance->data->dependency_tracker);
 		}
-		_geometry_instance_add_surface_with_material(ginstance, p_surface, material, next_pass.get_local_index(), material_storage->material_get_shader_id(next_pass), p_mesh);
+		_geometry_instance_add_surface_with_material(ginstance,
+			p_surface, material, next_pass.get_local_index(), material_storage->material_get_shader_id(next_pass), p_mesh);
 	}
 }
 
@@ -3748,7 +3783,7 @@ void RenderForwardClustered::_geometry_instance_update(RenderGeometryInstance *p
 		ginstance->data->dirty_dependencies = false;
 	}
 
-	ginstance->dirty_list_element.remove_from_list();
+	ginstance->dirty_list_element.remove_from_list(); //dirty_list_element应该是ginstance在列表中的句柄
 }
 
 void RenderForwardClustered::_update_dirty_geometry_instances() {

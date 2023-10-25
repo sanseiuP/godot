@@ -3105,7 +3105,15 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 				thread.clear();
 			}
 
-			WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(this, &RendererSceneCull::_scene_cull_threaded, &cull_data, scene_cull_result_threads.size(), -1, true, SNAME("RenderCullInstances"));
+			WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(
+				this,
+				&RendererSceneCull::_scene_cull_threaded,
+				&cull_data,
+				scene_cull_result_threads.size(),
+				-1,
+				true,
+				SNAME("RenderCullInstances")
+				);
 			WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
 
 			for (InstanceCullResult &thread : scene_cull_result_threads) {
@@ -3312,7 +3320,32 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	}
 
 	RENDER_TIMESTAMP("Render 3D Scene");
-	scene_render->render_scene(p_render_buffers, p_camera_data, prev_camera_data, scene_cull_result.geometry_instances, scene_cull_result.light_instances, scene_cull_result.reflections, scene_cull_result.voxel_gi_instances, scene_cull_result.decals, scene_cull_result.lightmaps, scene_cull_result.fog_volumes, p_environment, camera_attributes, p_shadow_atlas, occluders_tex, p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas, p_reflection_probe, p_reflection_probe_pass, p_screen_mesh_lod_threshold, render_shadow_data, max_shadows_used, render_sdfgi_data, cull.sdfgi.region_count, &sdfgi_update_data, r_render_info);
+	scene_render->render_scene(
+		p_render_buffers,
+		p_camera_data,
+		prev_camera_data,
+		scene_cull_result.geometry_instances,
+		scene_cull_result.light_instances,
+		scene_cull_result.reflections,
+		scene_cull_result.voxel_gi_instances,
+		scene_cull_result.decals,
+		scene_cull_result.lightmaps,
+		scene_cull_result.fog_volumes,
+		p_environment,
+		camera_attributes,
+		p_shadow_atlas,
+		occluders_tex,
+		p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas,
+		p_reflection_probe,
+		p_reflection_probe_pass,
+		p_screen_mesh_lod_threshold,
+		render_shadow_data,
+		max_shadows_used,
+		render_sdfgi_data,
+		cull.sdfgi.region_count,
+		&sdfgi_update_data,
+		r_render_info
+		);
 
 	if (p_viewport.is_valid()) {
 		RSG::viewport->viewport_set_prev_camera_data(p_viewport, p_camera_data);
