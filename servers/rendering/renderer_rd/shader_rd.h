@@ -56,11 +56,11 @@ public:
 
 private:
 	//versions
-	CharString general_defines;
-	Vector<VariantDefine> variant_defines;
-	Vector<bool> variants_enabled;
-	HashMap<int, LocalVector<int>> group_to_variant_map;
-	Vector<bool> group_enabled;
+	CharString general_defines; //@ssu comment Initialize 阶段设置的全局define
+	Vector<VariantDefine> variant_defines; //@ssu comment Initialize 阶段设置的每变体define
+	Vector<bool> variants_enabled; //@ssu comment 变体是否启用
+	HashMap<int, LocalVector<int>> group_to_variant_map; //@ssu comment 每个变体组包含的变体索引
+	Vector<bool> group_enabled; //@ssu comment 每个变体组是否启用
 
 	struct Version {
 		CharString uniforms;
@@ -113,7 +113,7 @@ private:
 		LocalVector<Chunk> chunks;
 	};
 
-	bool is_compute = false;
+	bool is_compute = false; //@ssu comment 是否是ComputeShader
 
 	String name;
 
@@ -204,6 +204,9 @@ public:
 
 	void initialize(const Vector<String> &p_variant_defines, const String &p_general_defines = "");
 	void initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines = "");
+
+	//@ssu Shader动态编译
+	virtual const char* GetSourceShaderFileName() const { return ""; }
 
 	virtual ~ShaderRD();
 };

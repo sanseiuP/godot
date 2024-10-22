@@ -2670,6 +2670,10 @@ void Viewport::push_text_input(const String &p_text) {
 	}
 }
 
+void Viewport::push_input_from_shortcut(const Ref<InputEvent> &p_event, bool p_local_coords) {
+	push_input(p_event, p_local_coords);
+}
+
 Viewport::SubWindowResize Viewport::_sub_window_get_resize_margin(Window *p_subwindow, const Point2 &p_point) {
 	if (p_subwindow->get_flag(Window::FLAG_BORDERLESS) || p_subwindow->get_flag(Window::FLAG_RESIZE_DISABLED)) {
 		return SUB_WINDOW_RESIZE_DISABLED;

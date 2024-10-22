@@ -39,6 +39,27 @@
 #include "servers/rendering/rendering_device.h"
 #include "thirdparty/misc/smolv.h"
 
+//START @ssu Shader 动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+
+//见glsl_builders.py
+namespace dynamic_shader_compile {
+
+
+	struct RDHeaderStruct {
+		Vector<String> vertex_lines;
+		Vector<String> fragment_lines;
+		Vector<String> compute_lines;
+
+		Vector<String> vertex_included_files;
+		Vector<String> fragment_included_files;
+		Vector<String> compute_included_files;
+	};
+}
+
+#endif
+//END @ssu Shader 动态编译
+
 void ShaderRD::_add_stage(const char *p_code, StageType p_stage_type) {
 	Vector<String> lines = String(p_code).split("\n");
 
