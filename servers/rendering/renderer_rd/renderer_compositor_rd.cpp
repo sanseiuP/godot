@@ -256,6 +256,14 @@ void RendererCompositorRD::set_boot_image(const Ref<Image> &p_image, const Color
 	RD::get_singleton()->free(sampler);
 }
 
+//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+void RendererCompositorRD::toggle_all_shader_rd_recompile() const {
+	ShaderRD::toggle_all_shader_rd_recompile();
+}
+#endif
+//END @ssu Shader动态编译
+
 RendererCompositorRD *RendererCompositorRD::singleton = nullptr;
 
 RendererCompositorRD::RendererCompositorRD() {

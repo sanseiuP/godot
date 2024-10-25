@@ -161,7 +161,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_normal |= uses_normal_map;
 	uses_tangent |= uses_normal_map;
 
-#if 1
+#if 0
 	print_line("**compiling shader:");
 	print_line("**defines:\n");
 	for (int i = 0; i < gen_code.defines.size(); i++) {
@@ -542,6 +542,12 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		}
 
 		shader.initialize(shader_versions, p_defines);
+
+		//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+		shader.add_to_recompile_list();
+#endif
+		//END @ssu Shader动态编译
 
 		if (RendererCompositorRD::get_singleton()->is_xr_enabled()) {
 			shader.enable_group(SHADER_GROUP_MULTIVIEW);

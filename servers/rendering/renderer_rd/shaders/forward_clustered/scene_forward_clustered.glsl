@@ -1036,6 +1036,8 @@ void fragment_shader(in SceneData scene_data) {
 #CODE : FRAGMENT
 	}
 
+	//albedo = albedo;
+
 #ifdef LIGHT_TRANSMITTANCE_USED
 	transmittance_color.a *= sss_strength;
 #endif
@@ -2254,143 +2256,143 @@ void fragment_shader(in SceneData scene_data) {
 
 #ifdef MODE_RENDER_DEPTH
 
-#ifdef MODE_RENDER_SDF
+	#ifdef MODE_RENDER_SDF
 
-	{
-		vec3 local_pos = (implementation_data.sdf_to_bounds * vec4(vertex, 1.0)).xyz;
-		ivec3 grid_pos = implementation_data.sdf_offset + ivec3(local_pos * vec3(implementation_data.sdf_size));
+		{
+			vec3 local_pos = (implementation_data.sdf_to_bounds * vec4(vertex, 1.0)).xyz;
+			ivec3 grid_pos = implementation_data.sdf_offset + ivec3(local_pos * vec3(implementation_data.sdf_size));
 
-		uint albedo16 = 0x1; //solid flag
-		albedo16 |= clamp(uint(albedo.r * 31.0), 0, 31) << 11;
-		albedo16 |= clamp(uint(albedo.g * 31.0), 0, 31) << 6;
-		albedo16 |= clamp(uint(albedo.b * 31.0), 0, 31) << 1;
+			uint albedo16 = 0x1; //solid flag
+			albedo16 |= clamp(uint(albedo.r * 31.0), 0, 31) << 11;
+			albedo16 |= clamp(uint(albedo.g * 31.0), 0, 31) << 6;
+			albedo16 |= clamp(uint(albedo.b * 31.0), 0, 31) << 1;
 
-		imageStore(albedo_volume_grid, grid_pos, uvec4(albedo16));
+			imageStore(albedo_volume_grid, grid_pos, uvec4(albedo16));
 
-		uint facing_bits = 0;
-		const vec3 aniso_dir[6] = vec3[](
-				vec3(1, 0, 0),
-				vec3(0, 1, 0),
-				vec3(0, 0, 1),
-				vec3(-1, 0, 0),
-				vec3(0, -1, 0),
-				vec3(0, 0, -1));
+			uint facing_bits = 0;
+			const vec3 aniso_dir[6] = vec3[](
+					vec3(1, 0, 0),
+					vec3(0, 1, 0),
+					vec3(0, 0, 1),
+					vec3(-1, 0, 0),
+					vec3(0, -1, 0),
+					vec3(0, 0, -1));
 
-		vec3 cam_normal = mat3(scene_data.inv_view_matrix) * normalize(normal_interp);
+			vec3 cam_normal = mat3(scene_data.inv_view_matrix) * normalize(normal_interp);
 
-		float closest_dist = -1e20;
+			float closest_dist = -1e20;
 
-		for (uint i = 0; i < 6; i++) {
-			float d = dot(cam_normal, aniso_dir[i]);
-			if (d > closest_dist) {
-				closest_dist = d;
-				facing_bits = (1 << i);
+			for (uint i = 0; i < 6; i++) {
+				float d = dot(cam_normal, aniso_dir[i]);
+				if (d > closest_dist) {
+					closest_dist = d;
+					facing_bits = (1 << i);
+				}
+			}
+
+		#ifdef MOLTENVK_USED
+				imageStore(geom_facing_grid, grid_pos, uvec4(imageLoad(geom_facing_grid, grid_pos).r | facing_bits)); //store facing bits
+		#else
+				imageAtomicOr(geom_facing_grid, grid_pos, facing_bits); //store facing bits
+		#endif
+
+			if (length(emission) > 0.001) {
+				float lumas[6];
+				vec3 light_total = vec3(0);
+
+				for (int i = 0; i < 6; i++) {
+					float strength = max(0.0, dot(cam_normal, aniso_dir[i]));
+					vec3 light = emission * strength;
+					light_total += light;
+					lumas[i] = max(light.r, max(light.g, light.b));
+				}
+
+				float luma_total = max(light_total.r, max(light_total.g, light_total.b));
+
+				uint light_aniso = 0;
+
+				for (int i = 0; i < 6; i++) {
+					light_aniso |= min(31, uint((lumas[i] / luma_total) * 31.0)) << (i * 5);
+				}
+
+				//compress to RGBE9995 to save space
+
+				const float pow2to9 = 512.0f;
+				const float B = 15.0f;
+				const float N = 9.0f;
+				const float LN2 = 0.6931471805599453094172321215;
+
+				float cRed = clamp(light_total.r, 0.0, 65408.0);
+				float cGreen = clamp(light_total.g, 0.0, 65408.0);
+				float cBlue = clamp(light_total.b, 0.0, 65408.0);
+
+				float cMax = max(cRed, max(cGreen, cBlue));
+
+				float expp = max(-B - 1.0f, floor(log(cMax) / LN2)) + 1.0f + B;
+
+				float sMax = floor((cMax / pow(2.0f, expp - B - N)) + 0.5f);
+
+				float exps = expp + 1.0f;
+
+				if (0.0 <= sMax && sMax < pow2to9) {
+					exps = expp;
+				}
+
+				float sRed = floor((cRed / pow(2.0f, exps - B - N)) + 0.5f);
+				float sGreen = floor((cGreen / pow(2.0f, exps - B - N)) + 0.5f);
+				float sBlue = floor((cBlue / pow(2.0f, exps - B - N)) + 0.5f);
+				//store as 8985 to have 2 extra neighbor bits
+				uint light_rgbe = ((uint(sRed) & 0x1FFu) >> 1) | ((uint(sGreen) & 0x1FFu) << 8) | (((uint(sBlue) & 0x1FFu) >> 1) << 17) | ((uint(exps) & 0x1Fu) << 25);
+
+				imageStore(emission_grid, grid_pos, uvec4(light_rgbe));
+				imageStore(emission_aniso_grid, grid_pos, uvec4(light_aniso));
 			}
 		}
 
-#ifdef MOLTENVK_USED
-		imageStore(geom_facing_grid, grid_pos, uvec4(imageLoad(geom_facing_grid, grid_pos).r | facing_bits)); //store facing bits
-#else
-		imageAtomicOr(geom_facing_grid, grid_pos, facing_bits); //store facing bits
-#endif
+	#endif
 
-		if (length(emission) > 0.001) {
-			float lumas[6];
-			vec3 light_total = vec3(0);
+	#ifdef MODE_RENDER_MATERIAL
 
-			for (int i = 0; i < 6; i++) {
-				float strength = max(0.0, dot(cam_normal, aniso_dir[i]));
-				vec3 light = emission * strength;
-				light_total += light;
-				lumas[i] = max(light.r, max(light.g, light.b));
-			}
+		albedo_output_buffer.rgb = albedo;
+		albedo_output_buffer.a = alpha;
 
-			float luma_total = max(light_total.r, max(light_total.g, light_total.b));
+		normal_output_buffer.rgb = encode24(normal) * 0.5 + 0.5;
+		normal_output_buffer.a = 0.0;
+		depth_output_buffer.r = -vertex.z;
 
-			uint light_aniso = 0;
+		orm_output_buffer.r = ao;
+		orm_output_buffer.g = roughness;
+		orm_output_buffer.b = metallic;
+		orm_output_buffer.a = sss_strength;
 
-			for (int i = 0; i < 6; i++) {
-				light_aniso |= min(31, uint((lumas[i] / luma_total) * 31.0)) << (i * 5);
-			}
+		emission_output_buffer.rgb = emission;
+		emission_output_buffer.a = 0.0;
+	#endif
 
-			//compress to RGBE9995 to save space
+	#ifdef MODE_RENDER_NORMAL_ROUGHNESS
+		normal_roughness_output_buffer = vec4(encode24(normal) * 0.5 + 0.5, roughness);
 
-			const float pow2to9 = 512.0f;
-			const float B = 15.0f;
-			const float N = 9.0f;
-			const float LN2 = 0.6931471805599453094172321215;
-
-			float cRed = clamp(light_total.r, 0.0, 65408.0);
-			float cGreen = clamp(light_total.g, 0.0, 65408.0);
-			float cBlue = clamp(light_total.b, 0.0, 65408.0);
-
-			float cMax = max(cRed, max(cGreen, cBlue));
-
-			float expp = max(-B - 1.0f, floor(log(cMax) / LN2)) + 1.0f + B;
-
-			float sMax = floor((cMax / pow(2.0f, expp - B - N)) + 0.5f);
-
-			float exps = expp + 1.0f;
-
-			if (0.0 <= sMax && sMax < pow2to9) {
-				exps = expp;
-			}
-
-			float sRed = floor((cRed / pow(2.0f, exps - B - N)) + 0.5f);
-			float sGreen = floor((cGreen / pow(2.0f, exps - B - N)) + 0.5f);
-			float sBlue = floor((cBlue / pow(2.0f, exps - B - N)) + 0.5f);
-			//store as 8985 to have 2 extra neighbor bits
-			uint light_rgbe = ((uint(sRed) & 0x1FFu) >> 1) | ((uint(sGreen) & 0x1FFu) << 8) | (((uint(sBlue) & 0x1FFu) >> 1) << 17) | ((uint(exps) & 0x1Fu) << 25);
-
-			imageStore(emission_grid, grid_pos, uvec4(light_rgbe));
-			imageStore(emission_aniso_grid, grid_pos, uvec4(light_aniso));
+		// We encode the dynamic static into roughness.
+		// Values over 0.5 are dynamic, under 0.5 are static.
+		normal_roughness_output_buffer.w = normal_roughness_output_buffer.w * (127.0 / 255.0);
+		if (bool(instances.data[instance_index].flags & INSTANCE_FLAGS_DYNAMIC)) {
+			normal_roughness_output_buffer.w = 1.0 - normal_roughness_output_buffer.w;
 		}
-	}
+		normal_roughness_output_buffer.w = normal_roughness_output_buffer.w;
 
-#endif
+		#ifdef MODE_RENDER_VOXEL_GI
+			if (bool(instances.data[instance_index].flags & INSTANCE_FLAGS_USE_VOXEL_GI)) { // process voxel_gi_instances
+				uint index1 = instances.data[instance_index].gi_offset & 0xFFFF;
+				uint index2 = instances.data[instance_index].gi_offset >> 16;
+				voxel_gi_buffer.x = index1 & 0xFFu;
+				voxel_gi_buffer.y = index2 & 0xFFu;
+			} else {
+				voxel_gi_buffer.x = 0xFF;
+				voxel_gi_buffer.y = 0xFF;
+			}
+		#endif
 
-#ifdef MODE_RENDER_MATERIAL
-
-	albedo_output_buffer.rgb = albedo;
-	albedo_output_buffer.a = alpha;
-
-	normal_output_buffer.rgb = encode24(normal) * 0.5 + 0.5;
-	normal_output_buffer.a = 0.0;
-	depth_output_buffer.r = -vertex.z;
-
-	orm_output_buffer.r = ao;
-	orm_output_buffer.g = roughness;
-	orm_output_buffer.b = metallic;
-	orm_output_buffer.a = sss_strength;
-
-	emission_output_buffer.rgb = emission;
-	emission_output_buffer.a = 0.0;
-#endif
-
-#ifdef MODE_RENDER_NORMAL_ROUGHNESS
-	normal_roughness_output_buffer = vec4(encode24(normal) * 0.5 + 0.5, roughness);
-
-	// We encode the dynamic static into roughness.
-	// Values over 0.5 are dynamic, under 0.5 are static.
-	normal_roughness_output_buffer.w = normal_roughness_output_buffer.w * (127.0 / 255.0);
-	if (bool(instances.data[instance_index].flags & INSTANCE_FLAGS_DYNAMIC)) {
-		normal_roughness_output_buffer.w = 1.0 - normal_roughness_output_buffer.w;
-	}
-	normal_roughness_output_buffer.w = normal_roughness_output_buffer.w;
-
-#ifdef MODE_RENDER_VOXEL_GI
-	if (bool(instances.data[instance_index].flags & INSTANCE_FLAGS_USE_VOXEL_GI)) { // process voxel_gi_instances
-		uint index1 = instances.data[instance_index].gi_offset & 0xFFFF;
-		uint index2 = instances.data[instance_index].gi_offset >> 16;
-		voxel_gi_buffer.x = index1 & 0xFFu;
-		voxel_gi_buffer.y = index2 & 0xFFu;
-	} else {
-		voxel_gi_buffer.x = 0xFF;
-		voxel_gi_buffer.y = 0xFF;
-	}
-#endif
-
-#endif //MODE_RENDER_NORMAL_ROUGHNESS
+	#endif //MODE_RENDER_NORMAL_ROUGHNESS
 
 //nothing happens, so a tree-ssa optimizer will result in no fragment shader :)
 #else
@@ -2408,50 +2410,50 @@ void fragment_shader(in SceneData scene_data) {
 	diffuse_light *= 1.0 - metallic;
 	ambient_light *= 1.0 - metallic;
 
-#ifndef FOG_DISABLED
-	//restore fog
-	fog = vec4(unpackHalf2x16(fog_rg), unpackHalf2x16(fog_ba));
-#endif //!FOG_DISABLED
+	#ifndef FOG_DISABLED
+		//restore fog
+		fog = vec4(unpackHalf2x16(fog_rg), unpackHalf2x16(fog_ba));
+	#endif //!FOG_DISABLED
 
-#ifdef MODE_SEPARATE_SPECULAR
+	#ifdef MODE_SEPARATE_SPECULAR
 
-#ifdef MODE_UNSHADED
-	diffuse_buffer = vec4(albedo.rgb, 0.0);
-	specular_buffer = vec4(0.0);
+		#ifdef MODE_UNSHADED
+			diffuse_buffer = vec4(albedo.rgb, 0.0);
+			specular_buffer = vec4(0.0);
+		#else
+			#ifdef SSS_MODE_SKIN
+				sss_strength = -sss_strength;
+			#endif
+			
+			diffuse_buffer = vec4(emission + diffuse_light + ambient_light, sss_strength);
+			specular_buffer = vec4(specular_light, metallic);
+		#endif
 
-#else
+		#ifndef FOG_DISABLED
+			diffuse_buffer.rgb = mix(diffuse_buffer.rgb, fog.rgb, fog.a);
+			specular_buffer.rgb = mix(specular_buffer.rgb, vec3(0.0), fog.a);
+		#endif //!FOG_DISABLED
 
-#ifdef SSS_MODE_SKIN
-	sss_strength = -sss_strength;
-#endif
-	diffuse_buffer = vec4(emission + diffuse_light + ambient_light, sss_strength);
-	specular_buffer = vec4(specular_light, metallic);
-#endif
+	#else //MODE_SEPARATE_SPECULAR
 
-#ifndef FOG_DISABLED
-	diffuse_buffer.rgb = mix(diffuse_buffer.rgb, fog.rgb, fog.a);
-	specular_buffer.rgb = mix(specular_buffer.rgb, vec3(0.0), fog.a);
-#endif //!FOG_DISABLED
+		alpha *= scene_data.pass_alpha_multiplier;
 
-#else //MODE_SEPARATE_SPECULAR
+		#ifdef MODE_UNSHADED
+			frag_color = vec4(albedo, alpha);
+		#else
+			frag_color = vec4(emission + ambient_light + diffuse_light + specular_light, alpha);
+		//frag_color = vec4(1.0);
+		#endif //USE_NO_SHADING
 
-	alpha *= scene_data.pass_alpha_multiplier;
+		#ifndef FOG_DISABLED
+			// Draw "fixed" fog before volumetric fog to ensure volumetric fog can appear in front of the sky.
+			frag_color.rgb = mix(frag_color.rgb, fog.rgb, fog.a);
+		#endif //!FOG_DISABLED
 
-#ifdef MODE_UNSHADED
-	frag_color = vec4(albedo, alpha);
-#else
-	frag_color = vec4(emission + ambient_light + diffuse_light + specular_light, alpha);
-//frag_color = vec4(1.0);
-#endif //USE_NO_SHADING
-
-#ifndef FOG_DISABLED
-	// Draw "fixed" fog before volumetric fog to ensure volumetric fog can appear in front of the sky.
-	frag_color.rgb = mix(frag_color.rgb, fog.rgb, fog.a);
-#endif //!FOG_DISABLED
-
-#endif //MODE_SEPARATE_SPECULAR
+	#endif //MODE_SEPARATE_SPECULAR
 
 #endif //MODE_RENDER_DEPTH
+
 #ifdef MOTION_VECTORS
 	vec2 position_clip = (screen_position.xy / screen_position.w) - scene_data.taa_jitter;
 	vec2 prev_position_clip = (prev_screen_position.xy / prev_screen_position.w) - scene_data_block.prev_data.taa_jitter;

@@ -36,6 +36,7 @@
 #include "core/object/worker_thread_pool.h"
 #include "core/version.h"
 #include "renderer_compositor_rd.h"
+#include "core/config/project_settings.h"
 #include "servers/rendering/rendering_device.h"
 #include "thirdparty/misc/smolv.h"
 
@@ -43,8 +44,13 @@
 #ifdef DYNAMIC_SHADER_COMPILE
 
 //见glsl_builders.py
+//参考 https://github.com/stuartcarnie/godot/blob/548db8c7d25d2ce9e5d13ab1676c7db85c602c33/servers/rendering/renderer_rd/shader_rd.cpp
 namespace dynamic_shader_compile {
-
+	enum class ShaderSection {
+		Vertex,
+		Fragment,
+		Compute
+	};
 
 	struct RDHeaderStruct {
 		Vector<String> vertex_lines;
@@ -54,7 +60,88 @@ namespace dynamic_shader_compile {
 		Vector<String> vertex_included_files;
 		Vector<String> fragment_included_files;
 		Vector<String> compute_included_files;
+
+		ShaderSection reading;
 	};
+
+	Error include_file_in_rd_header(const String &filename, RDHeaderStruct & header_data, int depth = 0) {
+		Ref<FileAccess> f = FileAccess::open(filename, FileAccess::READ);
+		ERR_FAIL_COND_V_MSG(!f.is_valid(), ERR_FILE_CANT_OPEN, vformat("Failed to open file %s", filename));
+
+		bool is_eof = false;
+		while (!is_eof) {
+			String line = f->get_line();
+			is_eof = f->eof_reached();
+			if (is_eof && line.is_empty()) {
+				// last line and empty, to match glsl_builders.py output
+				break;
+			}
+
+			//去除注释
+			int idx = line.find("//");
+			if (idx != -1) {
+				line = line.substr(0, idx);
+			}
+
+			//遇到Stage标记
+			if (line.find("#[vertex]") != -1) {
+				header_data.reading = ShaderSection::Vertex;
+				continue;
+			} else if (line.find("#[fragment]") != -1) {
+				header_data.reading = ShaderSection::Fragment;
+				continue;
+			} else if (line.find("#[compute]") != -1) {
+				header_data.reading = ShaderSection::Compute;
+				continue;
+			}
+
+			//遇到include
+			if (line.find("#include ") != -1) {
+				line = line.replace("#include ", "").strip_edges();
+				String include_line = line.substr(1, line.length() - 2);
+
+				//以thirdparty开头，认为是相对于项目的路径，否则是相对于文件的路径
+				String included_file;
+				if (include_line.begins_with("thirdparty/")) {
+					String shader_source_root = GLOBAL_GET("rendering/shader_compiler/dynamic_shader_compile/solution_path");
+					included_file = shader_source_root.path_join(include_line);
+				} else {
+					included_file = filename.get_base_dir().path_join(include_line);
+				}
+
+				//递归执行
+				if (!header_data.vertex_included_files.has(included_file) && header_data.reading == ShaderSection::Vertex) {
+					header_data.vertex_included_files.push_back(included_file);
+					Error res = include_file_in_rd_header(included_file, header_data, depth + 1);
+					ERR_FAIL_COND_V(res != OK, res);
+				} else if (!header_data.fragment_included_files.has(included_file) && header_data.reading == ShaderSection::Fragment) {
+					header_data.fragment_included_files.push_back(included_file);
+					Error res = include_file_in_rd_header(included_file, header_data, depth + 1);
+					ERR_FAIL_COND_V(res != OK, res);
+				} else if (!header_data.compute_included_files.has(included_file) && header_data.reading == ShaderSection::Compute) {
+					header_data.compute_included_files.push_back(included_file);
+					Error res = include_file_in_rd_header(included_file, header_data, depth + 1);
+					ERR_FAIL_COND_V(res != OK, res);
+				}
+
+				continue;
+			}
+
+			//去除换行符
+            line = line.replace("\r", "").replace("\n", "");
+
+			//添加行
+			if (header_data.reading == ShaderSection::Vertex) {
+				header_data.vertex_lines.push_back(line);
+			} else if (header_data.reading == ShaderSection::Fragment) {
+				header_data.fragment_lines.push_back(line);
+			} else if (header_data.reading == ShaderSection::Compute) {
+				header_data.compute_lines.push_back(line);
+			}
+		}
+
+		return OK;
+	}
 }
 
 #endif
@@ -156,6 +243,75 @@ void ShaderRD::setup(const char *p_vertex_code, const char *p_fragment_code, con
 
 	base_sha256 = tohash.as_string().sha256_text();
 }
+
+//START @ssu Shader 动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+void ShaderRD::recompile_shaders() {
+	print_line(vformat("** recompile shader rd %s", get_source_shader_filename()) );
+
+	dynamic_shader_compile::RDHeaderStruct header_data;
+	String shader_source_root = GLOBAL_GET("rendering/shader_compiler/dynamic_shader_compile/solution_path");
+	String filename = shader_source_root.path_join(get_source_shader_filename());
+
+	Error res = dynamic_shader_compile::include_file_in_rd_header(filename, header_data);
+	ERR_FAIL_COND(res != OK);
+
+	CharString compute_code, vertex_code, fragment_code;
+	bool compute_code_enabled = false;
+	if (!header_data.compute_lines.is_empty()) {
+		String code = String("\n").join(header_data.compute_lines) + String("\n");
+		compute_code = code.utf8();
+		compute_code_enabled = true;
+	} else {
+		String code = String("\n").join(header_data.vertex_lines) + String("\n");
+		vertex_code = code.utf8();
+
+		code = String("\n").join(header_data.fragment_lines) + String("\n");
+		fragment_code = code.utf8();
+	}
+
+	//清除旧数据
+	stage_templates[STAGE_TYPE_VERTEX].chunks.clear();
+	stage_templates[STAGE_TYPE_FRAGMENT].chunks.clear();
+	stage_templates[STAGE_TYPE_COMPUTE].chunks.clear();
+
+	//调用setup，对比哈希变化
+	String old_hash = base_sha256;
+	if (compute_code_enabled) {
+		setup(nullptr, nullptr, compute_code.get_data(), name.utf8().get_data());
+	} else {
+		setup(vertex_code.get_data(), fragment_code.get_data(), nullptr, name.utf8().get_data());
+	}
+	//如果哈希值没有任何变化，那么不需要重编shader
+	if (old_hash == base_sha256) {
+		return;
+	}
+
+	//group_sha256依赖于哈希值base_sha256，所以这里需要重新生成每个group的哈希
+	if (!shader_cache_dir.is_empty()) {
+		_initialize_cache();
+	}
+
+	//重新编译所有Shader
+	List<RID> all_versions;
+	version_owner.get_owned_list(&all_versions);
+	print_line(vformat("** recompile versions count %d", all_versions.size()) );
+	for (const RID &E : all_versions) {
+		Version *version = version_owner.get_or_null(E);
+
+		if (version->initialize_needed) {
+			continue;
+		}
+
+		for (int i = 0; i < group_enabled.size(); i++) {
+			if (group_enabled[i]) {
+				_compile_version(version, i);
+			}
+		}
+	}
+}
+#endif
+//END @ssu Shader 动态编译
 
 RID ShaderRD::version_create() {
 	//initialize() was never called
@@ -859,6 +1015,19 @@ bool ShaderRD::shader_cache_save_compressed = true;
 bool ShaderRD::shader_cache_save_compressed_zstd = true;
 bool ShaderRD::shader_cache_save_debug = true;
 
+//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+Vector<ShaderRD*> ShaderRD::shader_rd_for_recomplie;
+
+void ShaderRD::toggle_all_shader_rd_recompile() {
+	print_line("toggle all shader rd recompile");
+	for (ShaderRD* rd : shader_rd_for_recomplie) {
+		rd->recompile_shaders();
+	}
+}
+#endif
+//END @ssu Shader动态编译
+
 ShaderRD::~ShaderRD() {
 	List<RID> remaining;
 	version_owner.get_owned_list(&remaining);
@@ -869,4 +1038,10 @@ ShaderRD::~ShaderRD() {
 			remaining.pop_front();
 		}
 	}
+
+	//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	shader_rd_for_recomplie.remove_at(shader_rd_for_recomplie.find(this));
+#endif
+	// @ssu Shader动态编译
 }

@@ -3414,6 +3414,12 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_default_clear_color"), &RenderingServer::get_default_clear_color);
 	ClassDB::bind_method(D_METHOD("set_default_clear_color", "color"), &RenderingServer::set_default_clear_color);
 
+	//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	ClassDB::bind_method(D_METHOD("toggle_all_shader_rd_recompile"), &RenderingServer::toggle_all_shader_rd_recompile);
+#endif
+	//END @ssu Shader动态编译
+
 	ClassDB::bind_method(D_METHOD("has_os_feature", "feature"), &RenderingServer::has_os_feature);
 	ClassDB::bind_method(D_METHOD("set_debug_generate_wireframes", "generate"), &RenderingServer::set_debug_generate_wireframes);
 

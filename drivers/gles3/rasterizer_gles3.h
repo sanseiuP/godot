@@ -94,6 +94,12 @@ public:
 
 	void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true);
 
+	//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	virtual void toggle_all_shader_rd_recompile() const override {}
+#endif
+	//END @ssu Shader动态编译
+	
 	void initialize();
 	void begin_frame(double frame_step);
 

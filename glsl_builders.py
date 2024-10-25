@@ -92,7 +92,6 @@ def include_file_in_rd_header(filename: str, header_data: RDHeaderStruct, depth:
                         print_error(f'In file "{filename}": #include "{includeline}" could not be found!"')
 
                 line = fs.readline()
-                continue
 
             line = line.replace("\r", "").replace("\n", "")
 
@@ -141,7 +140,7 @@ def build_rd_header(
     body_content = "\n\t\t".join(body_parts)
 
     #ssu Shader动态编译
-    get_source_file_name = 'const char* GetSourceShaderFileName() const override { return "%s"; }' % filename
+    get_source_file_name = 'const char* get_source_shader_filename() const override { return "%s"; }' % filename
     get_source_file_name = get_source_file_name.replace("\\", "\\\\")
 
     # Intended curly brackets are doubled so f-string doesn't eat them up.

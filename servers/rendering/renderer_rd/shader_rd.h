@@ -152,6 +152,14 @@ protected:
 	ShaderRD();
 	void setup(const char *p_vertex_code, const char *p_fragment_code, const char *p_compute_code, const char *p_name);
 
+	//START @ssu Shader 动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	static Vector<ShaderRD*> shader_rd_for_recomplie; //用于触发所有Shader的动态编译
+
+	void recompile_shaders();
+#endif
+	//END @ssu Shader 动态编译
+
 public:
 	RID version_create();
 
@@ -205,8 +213,15 @@ public:
 	void initialize(const Vector<String> &p_variant_defines, const String &p_general_defines = "");
 	void initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines = "");
 
-	//@ssu Shader动态编译
-	virtual const char* GetSourceShaderFileName() const { return ""; }
+	//START @ssu Shader动态编译
+	virtual const char* get_source_shader_filename() const { return ""; }
+
+	void add_to_recompile_list() { shader_rd_for_recomplie.append(this); }
+
+#ifdef DYNAMIC_SHADER_COMPILE
+	static void toggle_all_shader_rd_recompile();
+#endif
+	//END @ssu Shader动态编译
 
 	virtual ~ShaderRD();
 };
