@@ -1006,6 +1006,12 @@ public:
 
 	FUNC4S(set_boot_image, const Ref<Image> &, const Color &, bool, bool)
 
+	//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	FUNC0SC(toggle_all_shader_rd_recompile)
+#endif
+	//END @ssu Shader动态编译
+
 	/* STATUS INFORMATION */
 
 #undef server_name

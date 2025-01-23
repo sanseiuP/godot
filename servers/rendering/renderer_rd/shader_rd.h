@@ -56,11 +56,11 @@ public:
 
 private:
 	//versions
-	CharString general_defines;
-	Vector<VariantDefine> variant_defines;
-	Vector<bool> variants_enabled;
-	HashMap<int, LocalVector<int>> group_to_variant_map;
-	Vector<bool> group_enabled;
+	CharString general_defines; //@ssu comment Initialize 阶段设置的全局define
+	Vector<VariantDefine> variant_defines; //@ssu comment Initialize 阶段设置的每变体define
+	Vector<bool> variants_enabled; //@ssu comment 变体是否启用
+	HashMap<int, LocalVector<int>> group_to_variant_map; //@ssu comment 每个变体组包含的变体索引
+	Vector<bool> group_enabled; //@ssu comment 每个变体组是否启用
 
 	struct Version {
 		CharString uniforms;
@@ -113,7 +113,7 @@ private:
 		LocalVector<Chunk> chunks;
 	};
 
-	bool is_compute = false;
+	bool is_compute = false; //@ssu comment 是否是ComputeShader
 
 	String name;
 
@@ -151,6 +151,14 @@ private:
 protected:
 	ShaderRD();
 	void setup(const char *p_vertex_code, const char *p_fragment_code, const char *p_compute_code, const char *p_name);
+
+	//START @ssu Shader 动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	static Vector<ShaderRD*> shader_rd_for_recomplie; //用于触发所有Shader的动态编译
+
+	void recompile_shaders();
+#endif
+	//END @ssu Shader 动态编译
 
 public:
 	RID version_create();
@@ -204,6 +212,16 @@ public:
 
 	void initialize(const Vector<String> &p_variant_defines, const String &p_general_defines = "");
 	void initialize(const Vector<VariantDefine> &p_variant_defines, const String &p_general_defines = "");
+
+	//START @ssu Shader动态编译
+	virtual const char* get_source_shader_filename() const { return ""; }
+
+	void add_to_recompile_list() { shader_rd_for_recomplie.append(this); }
+
+#ifdef DYNAMIC_SHADER_COMPILE
+	static void toggle_all_shader_rd_recompile();
+#endif
+	//END @ssu Shader动态编译
 
 	virtual ~ShaderRD();
 };

@@ -139,6 +139,10 @@ def build_rd_header(
 
     body_content = "\n\t\t".join(body_parts)
 
+    #ssu Shader动态编译
+    get_source_file_name = 'const char* get_source_shader_filename() const override { return "%s"; }' % filename
+    get_source_file_name = get_source_file_name.replace("\\", "\\\\")
+
     # Intended curly brackets are doubled so f-string doesn't eat them up.
     shader_template = f"""/* WARNING, THIS FILE WAS GENERATED, DO NOT EDIT */
 #ifndef {out_file_ifdef}_RD
@@ -150,8 +154,10 @@ class {out_file_class} : public ShaderRD {{
 
 public:
 
-	{out_file_class}() {{
+    {get_source_file_name}
 
+	{out_file_class}() {{
+        
 		{body_content}
 	}}
 }};

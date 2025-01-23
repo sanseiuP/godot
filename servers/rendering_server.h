@@ -1710,6 +1710,12 @@ public:
 	virtual Color get_default_clear_color() = 0;
 	virtual void set_default_clear_color(const Color &p_color) = 0;
 
+	//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+	virtual void toggle_all_shader_rd_recompile() const = 0;
+#endif
+	//END @ssu Shader动态编译
+
 #ifndef DISABLE_DEPRECATED
 	// Never actually used, should be removed when we can break compatibility.
 	enum Features{

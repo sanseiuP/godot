@@ -47,17 +47,31 @@ TAA::~TAA() {
 	taa_shader.version_free(shader_version);
 }
 
+/** @ssu comment
+ * @param p_frame 主通道（颜色通道）
+ * @param p_temp 用于TAA输出
+ * @param p_depth 深度buffer
+ * @param p_velocity 速度buffer
+ * @param p_prev_velocity 上一帧的速度buffer
+ * @param p_history 上一帧的主通道
+ * @param p_resolution 视口分辨率
+ * @param p_z_near 近平面
+ * @param p_z_far 远平面
+ */
 void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, Size2 p_resolution, float p_z_near, float p_z_far) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 	ERR_FAIL_NULL(material_storage);
 
+	//@ssu comment 获取TAA Shader，当前TAA只要一个ShaderVersion
 	RID shader = taa_shader.version_get_shader(shader_version, 0);
 	ERR_FAIL_COND(shader.is_null());
 
+	//@ssu comment 创建采样器
 	RID default_sampler = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
 
+	//@ssu comment Push Constant
 	TAAResolvePushConstant push_constant;
 	memset(&push_constant, 0, sizeof(TAAResolvePushConstant));
 	push_constant.resolution_width = p_resolution.width;
@@ -65,9 +79,11 @@ void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_pr
 	push_constant.disocclusion_threshold = 0.025f;
 	push_constant.disocclusion_scale = 10.0f;
 
+	//@ssu comment 发起计算着色器
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, pipeline);
 
+	//@ssu comment 分配Uniform参数
 	RD::Uniform u_frame_source(RD::UNIFORM_TYPE_IMAGE, 0, { p_frame });
 	RD::Uniform u_depth(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, { default_sampler, p_depth });
 	RD::Uniform u_velocity(RD::UNIFORM_TYPE_IMAGE, 2, { p_velocity });
@@ -75,9 +91,16 @@ void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_pr
 	RD::Uniform u_history(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 4, { default_sampler, p_history });
 	RD::Uniform u_frame_dest(RD::UNIFORM_TYPE_IMAGE, 5, { p_temp });
 
-	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 0, u_frame_source, u_depth, u_velocity, u_prev_velocity, u_history, u_frame_dest), 0);
+	//@ssu comment 绑定Uniform参数 set = 0
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list,
+		uniform_set_cache->get_cache(shader, 0, u_frame_source, u_depth, u_velocity, u_prev_velocity, u_history, u_frame_dest),
+		0);
+	//@ssu comment 绑定Push Constant
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(TAAResolvePushConstant));
+	//@ssu comment 发起渲染
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_resolution.width, p_resolution.height, 1);
+
+	//@ssu comment 结束渲染
 	RD::get_singleton()->compute_list_end();
 }
 

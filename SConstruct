@@ -1002,6 +1002,10 @@ GLSL_BUILDERS = {
 }
 env.Append(BUILDERS=GLSL_BUILDERS)
 
+#@ssu Shader 动态编译
+if env.editor_build:
+    env.Append(CPPDEFINES=["DYNAMIC_SHADER_COMPILE"])
+
 scons_cache_path = os.environ.get("SCONS_CACHE")
 if scons_cache_path is not None:
     CacheDir(scons_cache_path)

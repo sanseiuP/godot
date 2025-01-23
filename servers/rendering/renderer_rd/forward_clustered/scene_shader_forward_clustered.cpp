@@ -505,7 +505,10 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 	{
 		Vector<ShaderRD::VariantDefine> shader_versions;
-		shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, "\n#define MODE_RENDER_DEPTH\n", true)); // SHADER_VERSION_DEPTH_PASS
+		shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE,
+			"\n#define MODE_RENDER_DEPTH\n",
+			true)
+		); // SHADER_VERSION_DEPTH_PASS
 		shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, "\n#define MODE_RENDER_DEPTH\n#define MODE_DUAL_PARABOLOID\n", true)); // SHADER_VERSION_DEPTH_PASS_DP
 		shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_BASE, "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n", true)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS
 		shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI
@@ -546,6 +549,12 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		}
 
 		shader.initialize(shader_versions, p_defines);
+
+		//START @ssu Shader动态编译
+#ifdef DYNAMIC_SHADER_COMPILE
+		shader.add_to_recompile_list();
+#endif
+		//END @ssu Shader动态编译
 
 		if (RendererCompositorRD::get_singleton()->is_xr_enabled()) {
 			shader.enable_group(SHADER_GROUP_MULTIVIEW);
@@ -650,6 +659,11 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.renames["CAMERA_DIRECTION_WORLD"] = "scene_data.inv_view_matrix[2].xyz";
 		actions.renames["CAMERA_VISIBLE_LAYERS"] = "scene_data.camera_visible_layers";
 		actions.renames["NODE_POSITION_VIEW"] = "(scene_data.view_matrix * read_model_matrix)[3].xyz";
+
+		//START @ssu TAA Jitter Index
+		actions.renames["TAA_JITTER"] = "scene_data.taa_jitter";
+		actions.renames["TAA_JITTER_INDEX"] = "scene_data.taa_jitter_index";
+		//END
 
 		actions.renames["VIEW_INDEX"] = "ViewIndex";
 		actions.renames["VIEW_MONO_LEFT"] = "0";
