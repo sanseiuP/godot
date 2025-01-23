@@ -74,4 +74,9 @@ struct SceneData {
 	bool pancake_shadows;
 	uint camera_visible_layers;
 	float pass_alpha_multiplier;
+
+	float taa_jitter_index_normalized; //@ssu taa_jitter_index
+	float padding_2;
+	float padding_3;
+	float padding_4;
 };

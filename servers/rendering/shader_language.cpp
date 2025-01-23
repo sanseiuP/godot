@@ -7054,9 +7054,13 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 			return OK;
 
-		} else if (tk.type == TK_CONST || is_token_precision(tk.type) || is_token_nonvoid_datatype(tk.type) || is_struct) {
+		}
+
+		//遇到const/精度表示/非void类型标识/struct，说明是变量定义
+		else if (tk.type == TK_CONST || is_token_precision(tk.type) || is_token_nonvoid_datatype(tk.type) || is_struct) {
 			is_var_init = true;
 
+			//开始的流程和_parse_shader差不多
 			String struct_name = "";
 			if (is_struct) {
 				struct_name = tk.text;
@@ -7144,6 +7148,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			bool fixed_array_size = false;
 			bool first = true;
 
+			//创建一个VariableDeclarationNode
 			VariableDeclarationNode *vdnode = alloc_node<VariableDeclarationNode>();
 			vdnode->precision = precision;
 			if (is_struct) {
@@ -7154,12 +7159,14 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			};
 			vdnode->is_const = is_const;
 
+			//开始解析一个或多个标识符名称
 			do {
 				bool unknown_size = false;
 				VariableDeclarationNode::Declaration decl;
 
 				tk = _get_token();
 
+				//第一次循环允许存在数组大小的定义
 				if (first) {
 					first = false;
 
@@ -7186,13 +7193,18 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				}
 
 				StringName name = tk.text;
-				ShaderLanguage::IdentifierType itype;
-				if (_find_identifier(p_block, true, p_function_info, name, (ShaderLanguage::DataType *)nullptr, &itype)) {
-					if (itype != IDENTIFIER_FUNCTION) {
-						_set_redefinition_error(String(name));
-						return ERR_PARSE_ERROR;
+
+				//检查重定义
+				{
+					ShaderLanguage::IdentifierType itype;
+					if (_find_identifier(p_block, true, p_function_info, name, (ShaderLanguage::DataType *)nullptr, &itype)) {
+						if (itype != IDENTIFIER_FUNCTION) {
+							_set_redefinition_error(String(name));
+							return ERR_PARSE_ERROR;
+						}
 					}
 				}
+
 				decl.name = name;
 
 #ifdef DEBUG_ENABLED
@@ -7228,6 +7240,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 				tk = _get_token();
 
+				//又是数组
 				if (tk.type == TK_BRACKET_OPEN) {
 					Error error = _parse_array_size(p_block, p_function_info, false, &decl.size_expression, &var.array_size, &unknown_size);
 					if (error != OK) {
@@ -7244,6 +7257,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					keyword_completion_context = CF_BOOLEAN;
 				}
 #endif // DEBUG_ENABLED
+
+				//解析数组初始化器，输出到decl.initializer
 				if (var.array_size > 0 || unknown_size) {
 					bool full_def = false;
 
@@ -7438,7 +7453,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					}
 
 					array_size = var.array_size;
-				} else if (tk.type == TK_OP_ASSIGN) {
+				}
+				else if (tk.type == TK_OP_ASSIGN) {
 					//variable created with assignment! must parse an expression
 					Node *n = _parse_and_reduce_expression(p_block, p_function_info);
 					if (!n) {
@@ -7467,14 +7483,18 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 					decl.initializer.push_back(n);
 					tk = _get_token();
-				} else {
+				}
+				else
+				{
 					if (is_const) {
 						_set_error(RTR("Expected initialization of constant."));
 						return ERR_PARSE_ERROR;
 					}
 				}
 
+				//添加到VariableDeclarationNode
 				vdnode->declarations.push_back(decl);
+				//添加到p_block的变量列表
 				p_block->variables[name] = var;
 				is_const_decl = false;
 
@@ -7489,11 +7509,16 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					return ERR_PARSE_ERROR;
 				}
 			} while (tk.type == TK_COMMA); //another variable
+
 #ifdef DEBUG_ENABLED
 			keyword_completion_context = CF_BLOCK;
 #endif // DEBUG_ENABLED
+
+			//将VariableDeclarationNode添加到p_block->statements
 			p_block->statements.push_back(static_cast<Node *>(vdnode));
-		} else if (tk.type == TK_CURLY_BRACKET_OPEN) {
+		}
+		//一个其它的代码块，递归调用
+		else if (tk.type == TK_CURLY_BRACKET_OPEN) {
 			//a sub block, just because..
 			BlockNode *block = alloc_node<BlockNode>();
 			block->parent_block = p_block;
@@ -7501,7 +7526,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				return ERR_PARSE_ERROR;
 			}
 			p_block->statements.push_back(block);
-		} else if (tk.type == TK_CF_IF) {
+		}
+		//if
+		else if (tk.type == TK_CF_IF) {
 			//if () {}
 			tk = _get_token();
 			if (tk.type != TK_PARENTHESIS_OPEN) {
@@ -7509,6 +7536,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				return ERR_PARSE_ERROR;
 			}
 
+			//创建ControlFlowNode
 			ControlFlowNode *cf = alloc_node<ControlFlowNode>();
 			cf->flow_op = FLOW_OP_IF;
 #ifdef DEBUG_ENABLED
@@ -7533,6 +7561,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				return ERR_PARSE_ERROR;
 			}
 
+			//创建if语句内部的block
 			BlockNode *block = alloc_node<BlockNode>();
 			block->parent_block = p_block;
 			cf->expressions.push_back(n);
@@ -7546,6 +7575,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 			pos = _get_tkpos();
 			tk = _get_token();
+
+			//else语句
 			if (tk.type == TK_CF_ELSE) {
 				block = alloc_node<BlockNode>();
 				block->parent_block = p_block;
@@ -7557,7 +7588,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			} else {
 				_set_tkpos(pos); //rollback
 			}
-		} else if (tk.type == TK_CF_SWITCH) {
+		}
+		//switch
+		else if (tk.type == TK_CF_SWITCH) {
 			// switch() {}
 			tk = _get_token();
 			if (tk.type != TK_PARENTHESIS_OPEN) {
@@ -7657,7 +7690,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				}
 			}
 
-		} else if (tk.type == TK_CF_CASE) {
+		}
+		else if (tk.type == TK_CF_CASE) {
 			// case x : break; | return;
 
 			if (p_block && p_block->block_type == BlockNode::BLOCK_TYPE_CASE) {
@@ -7740,7 +7774,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 			return OK;
 
-		} else if (tk.type == TK_CF_DEFAULT) {
+		}
+		//default
+		else if (tk.type == TK_CF_DEFAULT) {
 			if (p_block && p_block->block_type == BlockNode::BLOCK_TYPE_CASE) {
 				_set_tkpos(pos);
 				return OK;
@@ -7774,7 +7810,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 			return OK;
 
-		} else if (tk.type == TK_CF_DO || tk.type == TK_CF_WHILE) {
+		}
+		//do/while
+		else if (tk.type == TK_CF_DO || tk.type == TK_CF_WHILE) {
 			// do {} while()
 			// while() {}
 			bool is_do = tk.type == TK_CF_DO;
@@ -7840,7 +7878,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					return ERR_PARSE_ERROR;
 				}
 			}
-		} else if (tk.type == TK_CF_FOR) {
+		}
+		//for
+		else if (tk.type == TK_CF_FOR) {
 			// for() {}
 			tk = _get_token();
 			if (tk.type != TK_PARENTHESIS_OPEN) {
@@ -7903,7 +7943,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				return err;
 			}
 
-		} else if (tk.type == TK_CF_RETURN) {
+		}
+		//return
+		else if (tk.type == TK_CF_RETURN) {
 			//check return type
 			BlockNode *b = p_block;
 
@@ -7982,7 +8024,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				}
 				block = block->parent_block;
 			}
-		} else if (tk.type == TK_CF_DISCARD) {
+		}
+		//discard
+		else if (tk.type == TK_CF_DISCARD) {
 			//check return type
 			BlockNode *b = p_block;
 			while (b && !b->parent_function) {
@@ -8009,7 +8053,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			}
 
 			p_block->statements.push_back(flow);
-		} else if (tk.type == TK_CF_BREAK) {
+		}
+		//break
+		else if (tk.type == TK_CF_BREAK) {
 			if (!p_can_break) {
 				_set_error(vformat(RTR("'%s' is not allowed outside of a loop or '%s' statement."), "break", "switch"));
 				return ERR_PARSE_ERROR;
@@ -8035,7 +8081,9 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 				block = block->parent_block;
 			}
 
-		} else if (tk.type == TK_CF_CONTINUE) {
+		}
+		//continue
+		else if (tk.type == TK_CF_CONTINUE) {
 			if (!p_can_continue) {
 				_set_error(vformat(RTR("'%s' is not allowed outside of a loop."), "continue"));
 				return ERR_PARSE_ERROR;
@@ -8054,10 +8102,12 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 
 			p_block->statements.push_back(flow);
 
-		} else {
+		}
+		//表达式
+		else {
 			//nothing else, so expression
 			_set_tkpos(pos); //rollback
-			Node *expr = _parse_and_reduce_expression(p_block, p_function_info);
+			Node *expr = _parse_and_reduce_expression(p_block, p_function_info); //这里解析表达式
 			if (!expr) {
 				return ERR_PARSE_ERROR;
 			}
@@ -8074,6 +8124,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			p_block->statements.push_back(expr);
 			tk = _get_token();
 
+			//检查各种情况
 			if (p_block->block_type == BlockNode::BLOCK_TYPE_FOR_CONDITION) {
 				if (tk.type == TK_COMMA) {
 					if (!is_condition) {
@@ -8086,7 +8137,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					_set_expected_error(",", ";");
 					return ERR_PARSE_ERROR;
 				}
-			} else if (p_block->block_type == BlockNode::BLOCK_TYPE_FOR_EXPRESSION) {
+			}
+			else if (p_block->block_type == BlockNode::BLOCK_TYPE_FOR_EXPRESSION) {
 				if (tk.type == TK_COMMA) {
 					continue;
 				}
@@ -8094,7 +8146,8 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 					_set_expected_error(",", ")");
 					return ERR_PARSE_ERROR;
 				}
-			} else if (tk.type != TK_SEMICOLON) {
+			}
+			else if (tk.type != TK_SEMICOLON) {
 				_set_expected_error(";");
 				return ERR_PARSE_ERROR;
 			}
@@ -8236,6 +8289,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 	HashMap<String, String> defined_modes;
 
 	while (tk.type != TK_EOF) {
+		//注：此处必然在函数、结构体等的外部，函数内部的解析在循环的某一步内完成
 		switch (tk.type) {
 			case TK_RENDER_MODE: {
 #ifdef DEBUG_ENABLED
@@ -9267,20 +9321,25 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 				StringName name;
 				int array_size = 0;
 
+				//遇到const标识符
 				if (tk.type == TK_CONST) {
 					is_constant = true;
 					tk = _get_token();
 				}
 
+				//遇到精度标识符
 				if (is_token_precision(tk.type)) {
 					precision = get_token_precision(tk.type);
 					tk = _get_token();
 				}
 
+				//接下来的标识符一定是类型标识符
 				if (shader->structs.has(tk.text)) {
+					//如果当前标识符是一个之前定义的struct
 					is_struct = true;
 					struct_name = tk.text;
 				} else {
+					//如果不是的话，检查标识符是否是合法的类型
 #ifdef DEBUG_ENABLED
 					if (_lookup_next(next)) {
 						if (next.type == TK_UNIFORM) {
@@ -9303,37 +9362,43 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					}
 				}
 
+				//获取类型
 				if (is_struct) {
 					type = TYPE_STRUCT;
 				} else {
 					type = get_token_datatype(tk.type);
 				}
 
+				//检查类型是否允许精度标识符
 				if (precision != PRECISION_DEFAULT && _validate_precision(type, precision) != OK) {
 					return ERR_PARSE_ERROR;
 				}
 
-				prev_pos = _get_tkpos();
-				tk = _get_token();
-
-#ifdef DEBUG_ENABLED
-				keyword_completion_context = CF_UNSPECIFIED;
-#endif // DEBUG_ENABLED
-
 				bool unknown_size = false;
 				bool fixed_array_size = false;
 
-				if (tk.type == TK_BRACKET_OPEN) {
-					Error error = _parse_array_size(nullptr, constants, !is_constant, nullptr, &array_size, &unknown_size);
-					if (error != OK) {
-						return error;
-					}
-					fixed_array_size = true;
+				//尝试寻找一个'['，如果找到的话尝试解析数组大小
+				{
 					prev_pos = _get_tkpos();
+					tk = _get_token();
+
+#ifdef DEBUG_ENABLED
+					keyword_completion_context = CF_UNSPECIFIED;
+#endif // DEBUG_ENABLED
+
+					if (tk.type == TK_BRACKET_OPEN) {
+						Error error = _parse_array_size(nullptr, constants, !is_constant, nullptr, &array_size, &unknown_size);
+						if (error != OK) {
+							return error;
+						}
+						fixed_array_size = true;
+						prev_pos = _get_tkpos();
+					}
+
+					_set_tkpos(prev_pos);
 				}
 
-				_set_tkpos(prev_pos);
-
+				//接下来一定是一个用户定义的标识符，获取到name
 				_get_completable_identifier(nullptr, COMPLETION_MAIN_FUNCTION, name);
 
 				if (name == StringName()) {
@@ -9345,13 +9410,17 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					return ERR_PARSE_ERROR;
 				}
 
+				//检查排除关键字
 				if (shader->structs.has(name) || _find_identifier(nullptr, false, constants, name) || has_builtin(p_functions, name, !is_constant)) {
 					_set_redefinition_error(String(name));
 					return ERR_PARSE_ERROR;
 				}
 
 				tk = _get_token();
+
+				//不是'('的话，说明是全局变量
 				if (tk.type != TK_PARENTHESIS_OPEN) {
+					//void变量不存在
 					if (type == TYPE_VOID) {
 						_set_error(RTR("Expected '(' after function identifier."));
 						return ERR_PARSE_ERROR;
@@ -9637,26 +9706,32 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 						}
 					}
 
-					break;
+					break; //跳出
 				}
 
-				FunctionInfo builtins;
+				//接下来进入一个函数
+				FunctionInfo builtins; //用于解析函数的一些数据
+
+				//如果传入的p_functions包含该函数名，那么把p_functions中的数据给上
 				if (p_functions.has(name)) {
 					builtins = p_functions[name];
 				}
 
+				//添加全局数据
 				if (p_functions.has("global")) { // Adds global variables: 'TIME'
 					for (const KeyValue<StringName, BuiltInInfo> &E : p_functions["global"].built_ins) {
 						builtins.built_ins.insert(E.key, E.value);
 					}
 				}
 
+				//添加全局常量数据
 				if (p_functions.has("constants")) { // Adds global constants: 'PI', 'TAU', 'E'
 					for (const KeyValue<StringName, BuiltInInfo> &E : p_functions["constants"].built_ins) {
 						builtins.built_ins.insert(E.key, E.value);
 					}
 				}
 
+				//检查重定义
 				for (int i = 0; i < shader->vfunctions.size(); i++) {
 					if (!shader->vfunctions[i].callable && shader->vfunctions[i].name == name) {
 						_set_redefinition_error(String(name));
@@ -9664,25 +9739,29 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					}
 				}
 
+				//生成用于存储的函数定义信息
 				ShaderNode::Function function;
 
 				function.callable = !p_functions.has(name);
 				function.name = name;
 
 				FunctionNode *func_node = alloc_node<FunctionNode>();
-
 				function.function = func_node;
 
+				//存储到shader数据
 				shader->functions.insert(name, function);
 				shader->vfunctions.push_back(function);
 
-				CallInfo call_info;
-				call_info.name = name;
+				//添加了一个与函数名相同的CallInfo，暂时不知道干啥用
+				{
+					CallInfo call_info;
+					call_info.name = name;
+					calls_info.insert(name, call_info);
+				}
 
-				calls_info.insert(name, call_info);
-
+				//构建FunctionNode
 				func_node->name = name;
-				func_node->return_type = type;
+				func_node->return_type = type; //返回值是之前解析的类型
 				func_node->return_struct_name = struct_name;
 				func_node->return_precision = precision;
 				func_node->return_array_size = array_size;
@@ -9702,6 +9781,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 
 				tk = _get_token();
 
+				//解析参数列表，输出到func_node->arguments。每次循环对应一个参数
 				while (true) {
 					if (tk.type == TK_PARENTHESIS_CLOSE) {
 						break;
@@ -9722,6 +9802,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					}
 #endif // DEBUG_ENABLED
 
+					//const
 					bool param_is_const = false;
 					if (tk.type == TK_CONST) {
 						param_is_const = true;
@@ -9743,6 +9824,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 #endif // DEBUG_ENABLED
 					}
 
+					//in/out/inout
 					ArgumentQualifier param_qualifier = ARGUMENT_QUALIFIER_IN;
 					if (is_token_arg_qual(tk.type)) {
 						bool error = false;
@@ -9796,6 +9878,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					DataPrecision param_precision = PRECISION_DEFAULT;
 					int arg_array_size = 0;
 
+					//精度
 					if (is_token_precision(tk.type)) {
 						param_precision = get_token_precision(tk.type);
 						tk = _get_token();
@@ -9818,48 +9901,56 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 #endif // DEBUG_ENABLED
 					}
 
-					is_struct = false;
-
-					if (shader->structs.has(tk.text)) {
-						is_struct = true;
-						param_struct_name = tk.text;
+					//接下来是获取类型定义
+					{
+						is_struct = false;
+						//用户定义的struct
+						if (shader->structs.has(tk.text)) {
+							is_struct = true;
+							param_struct_name = tk.text;
 #ifdef DEBUG_ENABLED
-						if (check_warnings && HAS_WARNING(ShaderWarning::UNUSED_STRUCT_FLAG) && used_structs.has(param_struct_name)) {
-							used_structs[param_struct_name].used = true;
-						}
+							if (check_warnings && HAS_WARNING(ShaderWarning::UNUSED_STRUCT_FLAG) && used_structs.has(param_struct_name)) {
+								used_structs[param_struct_name].used = true;
+							}
 #endif // DEBUG_ENABLED
-					}
+						}
 
-					if (!is_struct && !is_token_datatype(tk.type)) {
-						_set_error(RTR("Expected a valid data type for argument."));
-						return ERR_PARSE_ERROR;
-					}
-
-					if (param_qualifier == ARGUMENT_QUALIFIER_OUT || param_qualifier == ARGUMENT_QUALIFIER_INOUT) {
-						if (is_sampler_type(get_token_datatype(tk.type))) {
-							_set_error(RTR("Opaque types cannot be output parameters."));
+						//检查类型合法
+						if (!is_struct && !is_token_datatype(tk.type)) {
+							_set_error(RTR("Expected a valid data type for argument."));
 							return ERR_PARSE_ERROR;
 						}
-					}
 
-					if (is_struct) {
-						param_type = TYPE_STRUCT;
-					} else {
-						param_type = get_token_datatype(tk.type);
-						if (param_type == TYPE_VOID) {
-							_set_error(RTR("Void type not allowed as argument."));
+						//检查是否可以使用out/inout
+						if (param_qualifier == ARGUMENT_QUALIFIER_OUT || param_qualifier == ARGUMENT_QUALIFIER_INOUT) {
+							if (is_sampler_type(get_token_datatype(tk.type))) {
+								_set_error(RTR("Opaque types cannot be output parameters."));
+								return ERR_PARSE_ERROR;
+							}
+						}
+
+						//获取具体类型
+						if (is_struct) {
+							param_type = TYPE_STRUCT;
+						} else {
+							param_type = get_token_datatype(tk.type);
+							if (param_type == TYPE_VOID) {
+								_set_error(RTR("Void type not allowed as argument."));
+								return ERR_PARSE_ERROR;
+							}
+						}
+
+						//检查精度定义是否合法
+						if (param_precision != PRECISION_DEFAULT && _validate_precision(param_type, param_precision) != OK) {
 							return ERR_PARSE_ERROR;
 						}
-					}
-
-					if (param_precision != PRECISION_DEFAULT && _validate_precision(param_type, param_precision) != OK) {
-						return ERR_PARSE_ERROR;
-					}
 #ifdef DEBUG_ENABLED
-					keyword_completion_context = CF_UNSPECIFIED;
+						keyword_completion_context = CF_UNSPECIFIED;
 #endif // DEBUG_ENABLED
-					tk = _get_token();
+						tk = _get_token();
+					}
 
+					//尝试获取一个'['，并获取数组大小
 					if (tk.type == TK_BRACKET_OPEN) {
 						Error error = _parse_array_size(nullptr, constants, true, nullptr, &arg_array_size, nullptr);
 						if (error != OK) {
@@ -9867,26 +9958,32 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 						}
 						tk = _get_token();
 					}
+
+					//获取标识符名称
 					if (tk.type != TK_IDENTIFIER) {
 						_set_error(RTR("Expected an identifier for argument name."));
 						return ERR_PARSE_ERROR;
 					}
-
 					param_name = tk.text;
 
-					ShaderLanguage::IdentifierType itype;
-					if (_find_identifier(func_node->body, false, builtins, param_name, (ShaderLanguage::DataType *)nullptr, &itype)) {
-						if (itype != IDENTIFIER_FUNCTION) {
-							_set_redefinition_error(String(param_name));
-							return ERR_PARSE_ERROR;
+					//检查重定义
+					{
+						ShaderLanguage::IdentifierType itype;
+						if (_find_identifier(func_node->body, false, builtins, param_name, (ShaderLanguage::DataType *)nullptr, &itype)) {
+							if (itype != IDENTIFIER_FUNCTION) {
+								_set_redefinition_error(String(param_name));
+								return ERR_PARSE_ERROR;
+							}
 						}
 					}
 
+					//检查其他名称冲突
 					if (has_builtin(p_functions, param_name)) {
 						_set_redefinition_error(String(param_name));
 						return ERR_PARSE_ERROR;
 					}
 
+					//添加参数定义
 					FunctionNode::Argument arg;
 					arg.type = param_type;
 					arg.name = param_name;
@@ -9899,6 +9996,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					arg.tex_argument_repeat = REPEAT_DEFAULT;
 					arg.is_const = param_is_const;
 
+					//尝试获取一个'['，并获取数组大小
 					tk = _get_token();
 					if (tk.type == TK_BRACKET_OPEN) {
 						Error error = _parse_array_size(nullptr, constants, true, nullptr, &arg_array_size, nullptr);
@@ -9907,10 +10005,12 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 						}
 						tk = _get_token();
 					}
-
 					arg.array_size = arg_array_size;
+
+					//参数加到func_node->arguments
 					func_node->arguments.push_back(arg);
 
+					//接下来必然是一个','或')'
 					if (tk.type == TK_COMMA) {
 						tk = _get_token();
 						//do none and go on
@@ -9920,6 +10020,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					}
 				}
 
+				//如果是内置的函数，不能有参数和返回值
 				if (p_functions.has(name)) {
 					//if one of the core functions, make sure they are of the correct form
 					if (func_node->arguments.size() > 0) {
@@ -9932,6 +10033,7 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 					}
 				}
 
+				//终于进入到函数内部
 				//all good let's parse inside the function!
 				tk = _get_token();
 				if (tk.type != TK_CURLY_BRACKET_OPEN) {
@@ -9944,13 +10046,15 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 #ifdef DEBUG_ENABLED
 				keyword_completion_context = CF_BLOCK;
 #endif // DEBUG_ENABLED
-				Error err = _parse_block(func_node->body, builtins);
+				Error err = _parse_block(func_node->body, builtins); //这里解析函数内部
 				if (err) {
 					return err;
 				}
 #ifdef DEBUG_ENABLED
 				keyword_completion_context = CF_GLOBAL_SPACE;
 #endif // DEBUG_ENABLED
+
+				//检查返回值存在
 				if (func_node->return_type != DataType::TYPE_VOID) {
 					BlockNode *block = func_node->body;
 					if (_find_last_flow_op_in_block(block, FlowOperation::FLOW_OP_RETURN) != OK) {

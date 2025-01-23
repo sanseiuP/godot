@@ -161,7 +161,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_normal |= uses_normal_map;
 	uses_tangent |= uses_normal_map;
 
-#if 0
+#if 1
 	print_line("**compiling shader:");
 	print_line("**defines:\n");
 	for (int i = 0; i < gen_code.defines.size(); i++) {
@@ -178,7 +178,14 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	print_line("\n**vertex_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX]);
 	print_line("\n**fragment_globals:\n" + gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT]);
 #endif
-	shader_singleton->shader.version_set_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX], gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT], gen_code.defines);
+	shader_singleton->shader.version_set_code(
+		version,
+		gen_code.code,
+		gen_code.uniforms,
+		gen_code.stage_globals[ShaderCompiler::STAGE_VERTEX],
+		gen_code.stage_globals[ShaderCompiler::STAGE_FRAGMENT],
+		gen_code.defines
+	);
 	ERR_FAIL_COND(!shader_singleton->shader.version_is_valid(version));
 
 	ubo_size = gen_code.uniform_total_size;
@@ -648,6 +655,9 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.renames["VIEW_MONO_LEFT"] = "0";
 		actions.renames["VIEW_RIGHT"] = "1";
 		actions.renames["EYE_OFFSET"] = "eye_offset";
+
+		actions.renames["TAA_JITTER"] = "scene_data.taa_jitter"; //@ssu taa_jitter_index
+		actions.renames["TAA_JITTER_INDEX_NORMALIZED"] = "scene_data.taa_jitter_index_normalized"; //@ssu taa_jitter_index
 
 		//for light
 		actions.renames["VIEW"] = "view";

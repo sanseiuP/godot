@@ -505,7 +505,7 @@ public:
 
 	struct BlockNode : public Node {
 		FunctionNode *parent_function = nullptr;
-		BlockNode *parent_block = nullptr;
+		BlockNode *parent_block = nullptr; //用于构建block树，子节点向父节点的指针
 
 		enum BlockType {
 			BLOCK_TYPE_STANDARD,
@@ -530,8 +530,8 @@ public:
 			ConstantNode::Value value;
 		};
 
-		HashMap<StringName, Variable> variables;
-		List<Node *> statements;
+		HashMap<StringName, Variable> variables; //这个block内部定义的局部变量列表，应该有对应在statements中的VariableDeclarationNode
+		List<Node *> statements; //block中的各种语句
 		bool single_statement = false;
 		bool use_comma_between_statements = false;
 

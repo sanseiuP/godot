@@ -151,6 +151,7 @@ vec2 multiview_uv(vec2 uv) {
 	return uv;
 }
 ivec2 multiview_uv(ivec2 uv) {
+
 	return uv;
 }
 #endif //USE_MULTIVIEW

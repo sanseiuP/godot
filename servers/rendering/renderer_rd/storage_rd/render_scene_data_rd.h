@@ -48,6 +48,7 @@ public:
 	Transform3D cam_transform;
 	Projection cam_projection;
 	Vector2 taa_jitter;
+	float taa_jitter_index_normalized; //@ssu taa_jitter_index
 	uint32_t camera_visible_layers;
 	bool cam_orthogonal = false;
 	bool flip_y = false;
@@ -169,6 +170,11 @@ private:
 		uint32_t pancake_shadows;
 		uint32_t camera_visible_layers;
 		float pass_alpha_multiplier;
+
+		float taa_jitter_index_normalized; //@ssu taa_jitter_index
+		float padding_2 ;
+		float padding_3;
+		float padding_4;
 	};
 
 	struct UBODATA {
