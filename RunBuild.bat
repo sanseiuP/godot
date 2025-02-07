@@ -1,1 +1,1 @@
-scons platform=windows -j4 vsproj=yes target=editor dev_mode=yes dev_build=yes debug_symbols=yes optimize=debug arch=x86_64
+scons platform=windows -j4 vsproj=yes target=editor dev_mode=yes dev_build=yes debug_symbols=yes optimize=debug arch=x86_64 module_mono_enabled=yes
