@@ -367,12 +367,14 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 
 	Mesh::Surface *s = memnew(Mesh::Surface);
 
-	s->format = new_surface.format;
-	s->primitive = new_surface.primitive;
+	s->format = new_surface.format; //@ssu comment 格式（兼容不同版本）
+	s->primitive = new_surface.primitive; //@ssu comment 绘制拓扑（点、线、三角、三角条带等）
 
+	//@ssu comment 蒙皮网格首先用SkeletonShaderRD生成SkinCache，然后再参与计算
 	const bool use_as_storage = (new_surface.skin_data.size() || mesh->blend_shape_count > 0);
 	const BitField<RD::BufferCreationBits> as_storage_flag = use_as_storage ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
 
+	//@ssu comment 创建Vertex Buffer
 	if (new_surface.vertex_data.size()) {
 		// If we have an uncompressed surface that contains normals, but not tangents, we need to differentiate the array
 		// from a compressed array in the shader. To do so, we allow the normal to read 4 components out of the buffer
@@ -393,9 +395,12 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 		}
 	}
 
+	//@ssu comment 创建Attribute Buffer
 	if (new_surface.attribute_data.size()) {
 		s->attribute_buffer = RD::get_singleton()->vertex_buffer_create(new_surface.attribute_data.size(), new_surface.attribute_data);
 	}
+
+	//@ssu comment 创建Skin Buffer
 	if (new_surface.skin_data.size()) {
 		s->skin_buffer = RD::get_singleton()->vertex_buffer_create(new_surface.skin_data.size(), new_surface.skin_data, as_storage_flag);
 		s->skin_buffer_size = new_surface.skin_data.size();
@@ -407,6 +412,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 		mesh->has_bone_weights = true;
 	}
 
+	//@ssu comment 创建Index Buffer和Index Array（类似VAO？）
 	if (new_surface.index_count) {
 		bool is_index_16 = new_surface.vertex_count <= 65536 && new_surface.vertex_count > 0;
 
@@ -417,6 +423,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 			s->lods = memnew_arr(Mesh::Surface::LOD, new_surface.lods.size());
 			s->lod_count = new_surface.lods.size();
 
+			//@ssu comment 给Lods创建Index Buffer和Index Array，看起来Lods应该共享Vertex Buffer
 			for (int i = 0; i < new_surface.lods.size(); i++) {
 				uint32_t indices = new_surface.lods[i].index_data.size() / (is_index_16 ? 2 : 4);
 				s->lods[i].index_buffer = RD::get_singleton()->index_buffer_create(indices, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.lods[i].index_data);
@@ -429,19 +436,24 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 
 	ERR_FAIL_COND_MSG(!new_surface.index_count && !new_surface.vertex_count, "Meshes must contain a vertex array, an index array, or both");
 
+	//@ssu comment 包围盒
 	s->aabb = new_surface.aabb;
 	s->bone_aabbs = new_surface.bone_aabbs; //only really useful for returning them.
-	s->mesh_to_skeleton_xform = p_surface.mesh_to_skeleton_xform;
 
+	//其它
+	s->mesh_to_skeleton_xform = p_surface.mesh_to_skeleton_xform;
 	s->uv_scale = new_surface.uv_scale;
 
+	//@ssu comment 创建Blend Shape Buffer
 	if (mesh->blend_shape_count > 0) {
 		s->blend_shape_buffer = RD::get_singleton()->storage_buffer_create(new_surface.blend_shape_data.size(), new_surface.blend_shape_data);
 	}
 
+	//@ssu comment 骨骼网格体或带有变形器的情况下，需要创建ComputeShader需要的Uniform Buffer
 	if (use_as_storage) {
 		Vector<RD::Uniform> uniforms;
 		{
+			//@ssu comment Vertex Storage Buffer
 			RD::Uniform u;
 			u.binding = 0;
 			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
@@ -453,6 +465,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 			uniforms.push_back(u);
 		}
 		{
+			//@ssu comment Skin Buffer
 			RD::Uniform u;
 			u.binding = 1;
 			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
@@ -464,6 +477,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 			uniforms.push_back(u);
 		}
 		{
+			//@ssu comment Blend Shape Buffer
 			RD::Uniform u;
 			u.binding = 2;
 			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
@@ -478,6 +492,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 		s->uniform_set = RD::get_singleton()->uniform_set_create(uniforms, skeleton_shader.version_shader[0], SkeletonShader::UNIFORM_SET_SURFACE);
 	}
 
+	//@ssu comment 合并到Mesh的AABB
 	if (mesh->surface_count == 0) {
 		mesh->aabb = new_surface.aabb;
 	} else {
@@ -485,24 +500,30 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RS::SurfaceData &p_surface)
 	}
 	mesh->skeleton_aabb_version = 0;
 
+	//@ssu comment 设置材质
 	s->material = new_surface.material;
 
+	//@ssu comment 重分配Mesh的surfaces数组以添加新的Surface
 	mesh->surfaces = (Mesh::Surface **)memrealloc(mesh->surfaces, sizeof(Mesh::Surface *) * (mesh->surface_count + 1));
 	mesh->surfaces[mesh->surface_count] = s;
 	mesh->surface_count++;
 
+	//@ssu comment 如果Mesh现存MeshInstance，那么需要把Surface更新到Instance上
 	for (MeshInstance *mi : mesh->instances) {
 		_mesh_instance_add_surface(mi, mesh, mesh->surface_count - 1);
 	}
 
+	//@ssu comment 事件广播
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 
+	//@ssu comment 看起来是重新生成Shadow数据？
 	for (Mesh *E : mesh->shadow_owners) {
 		Mesh *shadow_owner = E;
 		shadow_owner->shadow_mesh = RID();
 		shadow_owner->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 	}
 
+	//@ssu comment 清空材质缓存
 	mesh->material_cache.clear();
 }
 
@@ -1012,6 +1033,7 @@ void MeshStorage::_mesh_instance_add_surface_buffer(MeshInstance *mi, Mesh *mesh
 
 	Vector<RD::Uniform> uniforms;
 	{
+		//这里绑定的是SkinCache输出
 		RD::Uniform u;
 		u.binding = 1;
 		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
@@ -1398,6 +1420,7 @@ RD::VertexFormatID MeshStorage::_mesh_surface_generate_vertex_format(uint64_t p_
 	return RD::get_singleton()->vertex_format_create(attributes);
 }
 
+//@ssu comment
 void MeshStorage::_mesh_surface_generate_version_for_input_mask(Mesh::Surface::Version &v, Mesh::Surface *s, uint64_t p_input_mask, bool p_input_motion_vectors, MeshInstance::Surface *mis, uint32_t p_current_buffer, uint32_t p_previous_buffer) {
 	uint32_t position_stride = 0;
 	v.vertex_format = _mesh_surface_generate_vertex_format(s->format, p_input_mask, mis != nullptr, p_input_motion_vectors, position_stride);

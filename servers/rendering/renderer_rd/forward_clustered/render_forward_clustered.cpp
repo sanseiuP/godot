@@ -357,6 +357,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		RID material_uniform_set;
 		void *mesh_surface;
 
+		//@ssu comment 决定渲染需要的：Surface、MaterialUniformBuffer、Shader
 		if (shadow_pass || p_pass_mode == PASS_MODE_DEPTH) { //regular depth pass can use these too
 			material_uniform_set = surf->material_uniform_set_shadow;
 			shader = surf->shader_shadow;
@@ -393,6 +394,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 			should_request_redraw = true;
 		}
 
+		//@ssu comment 确定面剔除模式
 		// Determine the cull variant.
 		SceneShaderForwardClustered::ShaderData::CullVariant cull_variant = SceneShaderForwardClustered::ShaderData::CULL_VARIANT_MAX;
 		if constexpr (p_pass_mode == PASS_MODE_DEPTH_MATERIAL || p_pass_mode == PASS_MODE_SDF) {
@@ -414,10 +416,13 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 			}
 		}
 
+		//@ssu comment 拓扑
 		pipeline_key.primitive_type = surf->primitive;
 
+		//@ssu comment 物体变换的UniformBufferSet
 		RID xforms_uniform_set = surf->owner->transforms_uniform_set;
 
+		//@ssu comment 特化变体？
 		SceneShaderForwardClustered::ShaderSpecialization pipeline_specialization = p_params->base_specialization;
 		pipeline_specialization.multimesh = bool(surf->owner->base_flags & INSTANCE_DATA_FLAG_MULTIMESH);
 		pipeline_specialization.multimesh_format_2d = bool(surf->owner->base_flags & INSTANCE_DATA_FLAG_MULTIMESH_FORMAT_2D);
@@ -430,6 +435,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 			pipeline_specialization.use_directional_soft_shadows = p_params->use_directional_soft_shadow;
 		}
 
+		//@ssu comment ColorPassFlag 猜测是用来哈希的？以及后面确定VertexInputMask
 		pipeline_key.color_pass_flags = 0;
 
 		switch (p_pass_mode) {
@@ -483,33 +489,38 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 			} break;
 		}
 
+		//@ssu comment 其它
 		pipeline_key.framebuffer_format_id = framebuffer_format;
 		pipeline_key.wireframe = p_params->force_wireframe;
 		pipeline_key.ubershader = 0;
 
+
 		const RD::PolygonCullMode cull_mode = shader->get_cull_mode_from_cull_variant(cull_variant);
 		RID vertex_array_rd;
-		RID index_array_rd;
 		RID pipeline_rd;
 		uint32_t ubershader_iterations = 2;
 		if constexpr (p_pass_mode == PASS_MODE_DEPTH_MATERIAL || p_pass_mode == PASS_MODE_SDF) {
-			ubershader_iterations = 1;
+			ubershader_iterations = 1; //@ssu comment 不使用ubershader，下面的循环只执行一次
 		}
 
+		//@ssu comment 第一次循环尝试获取特化常量的Pipeline，如果失败，第二次循环使用UberShader
 		bool pipeline_valid = false;
 		while (pipeline_key.ubershader < ubershader_iterations) {
-			// Skeleton and blend shape.
+			//@ssu comment 根据vertex input mask，获取VAO和vertex format
 			RD::VertexFormatID vertex_format = -1;
-			bool pipeline_motion_vectors = pipeline_key.color_pass_flags & SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS;
-			uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.color_pass_flags, pipeline_key.ubershader);
-			if (surf->owner->mesh_instance.is_valid()) {
-				mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->mesh_instance, surf->surface_index, input_mask, pipeline_motion_vectors, vertex_array_rd, vertex_format);
-			} else {
-				mesh_storage->mesh_surface_get_vertex_arrays_and_format(mesh_surface, input_mask, pipeline_motion_vectors, vertex_array_rd, vertex_format);
+			{
+				bool pipeline_motion_vectors = pipeline_key.color_pass_flags & SceneShaderForwardClustered::PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS;
+				uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.color_pass_flags, pipeline_key.ubershader);
+				if (surf->owner->mesh_instance.is_valid()) {
+					mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->mesh_instance, surf->surface_index, input_mask, pipeline_motion_vectors, vertex_array_rd, vertex_format);
+				} else {
+					mesh_storage->mesh_surface_get_vertex_arrays_and_format(mesh_surface, input_mask, pipeline_motion_vectors, vertex_array_rd, vertex_format);
+				}
 			}
 
 			pipeline_key.vertex_format_id = vertex_format;
 
+			//@ssu comment 如果使用ubershader，那么没有特化常量，没有剔除
 			if (pipeline_key.ubershader) {
 				pipeline_key.shader_specialization = {};
 				pipeline_key.cull_mode = RD::POLYGON_CULL_DISABLED;
@@ -518,29 +529,32 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 				pipeline_key.cull_mode = cull_mode;
 			}
 
+			//@ssu comment pipeline缓存
 			pipeline_hash = pipeline_key.hash();
-
-			if (shader != prev_shader || pipeline_hash != prev_pipeline_hash) {
-				bool wait_for_compilation = (ubershader_iterations == 1) || pipeline_key.ubershader;
+			if (shader != prev_shader || pipeline_hash != prev_pipeline_hash) { //@ssu comment pipeline变化
+				bool wait_for_compilation = (ubershader_iterations == 1) || pipeline_key.ubershader; //@ssu comment 是否要同步等待，条件是不使用UberShader或正在获取的就是UberShader
 				RS::PipelineSource pipeline_source = wait_for_compilation ? RS::PIPELINE_SOURCE_DRAW : RS::PIPELINE_SOURCE_SPECIALIZATION;
-				pipeline_rd = shader->pipeline_hash_map.get_pipeline(pipeline_key, pipeline_hash, wait_for_compilation, pipeline_source);
+				pipeline_rd = shader->pipeline_hash_map.get_pipeline(pipeline_key, pipeline_hash, wait_for_compilation, pipeline_source); //@ssu comment 创建/获取pipeline
 
 				if (pipeline_rd.is_valid()) {
+					//@ssu comment 创建/获取成功
 					pipeline_valid = true;
 					prev_shader = shader;
 					prev_pipeline_hash = pipeline_hash;
 					break;
 				} else {
-					pipeline_key.ubershader++;
+					pipeline_key.ubershader++; //尝试在下一次循环获取UberShader
 				}
 			} else {
 				// The same pipeline is bound already.
+				//@ssu comment pipeline可以沿用上次的
 				pipeline_valid = true;
 				break;
 			}
 		}
 
 		if (pipeline_valid) {
+			RID index_array_rd;
 			index_array_rd = mesh_storage->mesh_surface_get_index_array(mesh_surface, element_info.lod_index);
 
 			if (prev_vertex_array_rd != vertex_array_rd) {

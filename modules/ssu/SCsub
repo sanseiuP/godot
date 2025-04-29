@@ -1,0 +1,11 @@
+Import("env")
+Import("env_modules")
+
+env_ssu = env_modules.Clone()
+
+module_obj = []
+env_ssu.add_source_files(module_obj, "*.cpp")
+if env.editor_build:
+    env_ssu.add_source_files(module_obj, "editor/*.cpp")
+
+env.modules_sources += module_obj
