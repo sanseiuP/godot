@@ -156,7 +156,7 @@ private:
 		uint32_t blend_shape_count = 0;
 		RSE::BlendShapeMode blend_shape_mode = RSE::BLEND_SHAPE_MODE_NORMALIZED;
 
-		Surface **surfaces = nullptr;
+		Surface **surfaces = nullptr; //@ssu comment 指针数组
 		uint32_t surface_count = 0;
 
 		bool has_bone_weights = false;
