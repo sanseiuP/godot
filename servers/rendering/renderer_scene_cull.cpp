@@ -2801,7 +2801,8 @@ bool RendererSceneCull::_visibility_parent_check(const CullData &p_cull_data, co
 		return true;
 	}
 	const uint32_t &parent_flags = p_cull_data.scenario->instance_data[p_instance_data.parent_array_index].flags;
-	return ((parent_flags & InstanceData::FLAG_VISIBILITY_DEPENDENCY_NEEDS_CHECK) == InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE) || (parent_flags & InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN);
+	return ((parent_flags & InstanceData::FLAG_VISIBILITY_DEPENDENCY_NEEDS_CHECK) == InstanceData::FLAG_VISIBILITY_DEPENDENCY_HIDDEN_CLOSE_RANGE) ||
+		(parent_flags & InstanceData::FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN);
 }
 
 void RendererSceneCull::_scene_cull_threaded(uint32_t p_thread, CullData *cull_data) {
@@ -2850,7 +2851,8 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 						RSG::light_storage->light_instance_mark_visible(RID::from_uint64(idata.instance_data_rid)); //mark it visible for shadow allocation later
 					}
 
-				} else if (base_type == RS::INSTANCE_REFLECTION_PROBE) {
+				}
+				else if (base_type == RS::INSTANCE_REFLECTION_PROBE) {
 					if (cull_data.render_reflection_probe != idata.instance) {
 						//avoid entering The Matrix
 
@@ -2870,10 +2872,12 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 							cull_result.reflections.push_back(RID::from_uint64(idata.instance_data_rid));
 						}
 					}
-				} else if (base_type == RS::INSTANCE_DECAL) {
+				}
+				else if (base_type == RS::INSTANCE_DECAL) {
 					cull_result.decals.push_back(RID::from_uint64(idata.instance_data_rid));
 
-				} else if (base_type == RS::INSTANCE_VOXEL_GI) {
+				}
+				else if (base_type == RS::INSTANCE_VOXEL_GI) {
 					InstanceVoxelGIData *voxel_gi = static_cast<InstanceVoxelGIData *>(idata.instance->base_data);
 					cull_data.cull->lock.lock();
 					if (!voxel_gi->update_element.in_list()) {
@@ -2882,11 +2886,14 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 					cull_data.cull->lock.unlock();
 					cull_result.voxel_gi_instances.push_back(RID::from_uint64(idata.instance_data_rid));
 
-				} else if (base_type == RS::INSTANCE_LIGHTMAP) {
+				}
+				else if (base_type == RS::INSTANCE_LIGHTMAP) {
 					cull_result.lightmaps.push_back(RID::from_uint64(idata.instance_data_rid));
-				} else if (base_type == RS::INSTANCE_FOG_VOLUME) {
+				}
+				else if (base_type == RS::INSTANCE_FOG_VOLUME) {
 					cull_result.fog_volumes.push_back(RID::from_uint64(idata.instance_data_rid));
-				} else if (base_type == RS::INSTANCE_VISIBLITY_NOTIFIER) {
+				}
+				else if (base_type == RS::INSTANCE_VISIBLITY_NOTIFIER) {
 					InstanceVisibilityNotifierData *vnd = idata.visibility_notifier;
 					if (!vnd->list_element.in_list()) {
 						visible_notifier_list_lock.lock();
@@ -2895,7 +2902,8 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 						vnd->just_visible = true;
 					}
 					vnd->visible_in_frame = RSG::rasterizer->get_frame_number();
-				} else if (((1 << base_type) & RS::INSTANCE_GEOMETRY_MASK) && !(idata.flags & InstanceData::FLAG_CAST_SHADOWS_ONLY)) {
+				}
+				else if (((1 << base_type) & RS::INSTANCE_GEOMETRY_MASK) && !(idata.flags & InstanceData::FLAG_CAST_SHADOWS_ONLY)) {
 					bool keep = true;
 
 					if (idata.flags & InstanceData::FLAG_REDRAW_IF_VISIBLE) {
@@ -3483,7 +3491,13 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	}
 
 	RENDER_TIMESTAMP("Render 3D Scene");
-	scene_render->render_scene(p_render_buffers, p_camera_data, prev_camera_data, scene_cull_result.geometry_instances, scene_cull_result.light_instances, scene_cull_result.reflections, scene_cull_result.voxel_gi_instances, scene_cull_result.decals, scene_cull_result.lightmaps, scene_cull_result.fog_volumes, p_environment, camera_attributes, p_compositor, p_shadow_atlas, occluders_tex, p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas, p_reflection_probe, p_reflection_probe_pass, p_screen_mesh_lod_threshold, render_shadow_data, max_shadows_used, render_sdfgi_data, cull.sdfgi.region_count, &sdfgi_update_data, r_render_info);
+	scene_render->render_scene(p_render_buffers, p_camera_data, prev_camera_data,
+		scene_cull_result.geometry_instances, scene_cull_result.light_instances, scene_cull_result.reflections, scene_cull_result.voxel_gi_instances,
+		scene_cull_result.decals, scene_cull_result.lightmaps, scene_cull_result.fog_volumes,
+		p_environment, camera_attributes, p_compositor, p_shadow_atlas, occluders_tex,
+		p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas, p_reflection_probe, p_reflection_probe_pass,
+		p_screen_mesh_lod_threshold, render_shadow_data, max_shadows_used, render_sdfgi_data, cull.sdfgi.region_count, &sdfgi_update_data, r_render_info
+	);
 
 	if (p_viewport.is_valid()) {
 		RSG::viewport->viewport_set_prev_camera_data(p_viewport, p_camera_data);
